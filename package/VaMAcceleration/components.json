@@ -1,0 +1,80 @@
+{
+  "version": "1.8.26",
+  "quest3": "4.6.302",
+  "game": "1.22.0.12",
+  "patches": {
+    "VaM_Data/Managed/Assembly-CSharp.dll": [
+      {
+        "base": "b368d7a6bf3c2a51861741d26c13a0e92e687db55c99c6285320717d7e4978db",
+        "target": "2440172dcd4fc5bf71b677fc464cc26d7ea0e8d5289209c37217f7870df6875c",
+        "length": 5597184,
+        "patch": "patches/core0.xorz"
+      },
+      {
+        "base": "e48a6639a2d07a1bfceddf05164a66ada9cefac837fee0f1d65df9ca4e2063bc",
+        "target": "2440172dcd4fc5bf71b677fc464cc26d7ea0e8d5289209c37217f7870df6875c",
+        "length": 5597184,
+        "patch": "patches/core1.xorz"
+      },
+      {
+        "base": "6f049438c4515cf0539d3044ffb04d5412d76aa9955d71bfaa17bd287e18f286",
+        "target": "2440172dcd4fc5bf71b677fc464cc26d7ea0e8d5289209c37217f7870df6875c",
+        "length": 5597184,
+        "patch": "patches/core2.xorz"
+      }
+    ],
+    "Mono/EmbedRuntime/mono.dll": [
+      {
+        "base": "d4b2d136e59822ee6ebcaa6abdeb65d3ecb0d0a80e05efa0f0790ed3e795fa24",
+        "target": "4829439127752424c4ee6d42c3e379337e125a470df51492ae2493455a336201",
+        "length": 2884608,
+        "patch": "patches/mono.xorz"
+      }
+    ],
+    "PerformancePatches/SkinMeshPartDLL.dll": [
+      {
+        "base": "59ac9eeaf863b72dc6c05586a5c2aa77638641787c8c38d6f63b7dd24e6066e1",
+        "target": "651908b5dccb5923ab4075dd4375ff6fa103e03fcac7d2d4e23e6a638911865e",
+        "length": 308736,
+        "patch": "patches/skin0.xorz"
+      },
+      {
+        "base": "be8893d9d73911ac35f68c1170e38e06f3a72b1ccf52b761d599a365391b5387",
+        "target": "651908b5dccb5923ab4075dd4375ff6fa103e03fcac7d2d4e23e6a638911865e",
+        "length": 308736,
+        "patch": "patches/skin1.xorz"
+      },
+      {
+        "base": "ce1d495bc85907c9706ce8263ea3e627ac3f94310e9cbf55146669521abf3da6",
+        "target": "651908b5dccb5923ab4075dd4375ff6fa103e03fcac7d2d4e23e6a638911865e",
+        "length": 308736,
+        "patch": "patches/skin2.xorz"
+      },
+      {
+        "base": "1b3a496c073154238635413ffa060baa4557bbce923754cae3ff54868412edb7",
+        "target": "651908b5dccb5923ab4075dd4375ff6fa103e03fcac7d2d4e23e6a638911865e",
+        "length": 308736,
+        "patch": "patches/skin3.xorz"
+      }
+    ]
+  },
+  "payload": {
+    "winhttp.dll": "ef255435c75b1cd108b8a8b2418f7cb5706bc323f487c83dc732b4f91103d0c3",
+    "BepInEx/core/0Harmony.dll": "5f422df002042e72db8be2fbd55dd768dca0085ccf00f1c45a574d32c25ce3cf",
+    "BepInEx/core/0Harmony20.dll": "317bdadc0427e7654c2f7d4a68a8bdd525b4efc1c4b1ce4a76f46be08358c411",
+    "BepInEx/core/BepInEx.dll": "3df1208d575a2a7aca799417f496ce135c70da59ed78b597589f0c8191396859",
+    "BepInEx/core/BepInEx.Harmony.dll": "39c2b457a7d2ed91c5f892ab7571ccc99dcc2d7ee1094116457f1d2520080371",
+    "BepInEx/core/BepInEx.Preloader.dll": "d9d3cd18ae39897ebb3aa3cd9968824ea7d199a06abb9255a46f9e659139717c",
+    "BepInEx/core/HarmonyXInterop.dll": "edc7e2c5f0ec9f7d716089219ab717e8c4bc5536ca79c910b4bdd4a3f1570dc1",
+    "BepInEx/core/Mono.Cecil.dll": "7ae470288fff4a402899c254d0a76cefef55877f5c54f96e83c797cc5bb6e2f6",
+    "BepInEx/core/Mono.Cecil.Mdb.dll": "5896d1898f616701fff18f3b2c71e6b844d2390ef9f41e1c5fccce8cb27c698e",
+    "BepInEx/core/Mono.Cecil.Pdb.dll": "174db44a067f58561510af746f3caeb032037762c57a31c8d9ee32db25174984",
+    "BepInEx/core/Mono.Cecil.Rocks.dll": "54ac539fb5ddc8b44c0e9acd0fcb7324f89d1a072edf8ebc1b06dd691e3d3927",
+    "BepInEx/core/MonoMod.RuntimeDetour.dll": "0e28ad23204722c96311fee10f0975beafa0993593714b7f8e484156e84e1b75",
+    "BepInEx/core/MonoMod.Utils.dll": "5cc569dfaf20243a96e2cf2a5e6cfe3e0084e31a84d12a4482a80e7fbc4eddf4",
+    "BepInEx/plugins/Quest3TriggerUI/Quest3TriggerUI.HotLoader.dll": "0b116ab9c876998883e82d3e838d2993f29f8cd63e404f00bdb70e06c67e7e99",
+    "BepInEx/plugins/Quest3TriggerUI/Quest3TriggerUI.payload.dll.disabled": "3dd26fac2e59ce5428bd23fa4d8453676a48ebe8ce5c5f7d082d17d3489f2e83",
+    "BepInEx/plugins/Quest3TriggerUI/texconv.exe": "61628997fc723a273627f4f8efc63ffae1f45181925571f7e8764d8a45cccf6c",
+    "BepInEx/plugins/VaMMemory/VaM.Memory.dll": "213956eed3e3869254622b44473b635a26932b7321f7ceec185cf1e5d9a75bb8"
+  }
+}

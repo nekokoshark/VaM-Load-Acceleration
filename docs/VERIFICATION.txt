@@ -1,0 +1,252 @@
+Changed branch/field: unified frozen runtime payload + cache_root(prefs.cacheFolder) + per-family portable prebuild + exact source Naturalis patches + BC7 opaque colour pair transaction + guarded restore.
+MODIFIED_FILE: <verification-workdir>\MODIFIED_FILE.zip
+DIFF_FILE: <verification-workdir>\DIFF_FILE.patch
+VERIFICATION: <verification-workdir>\VERIFICATION.txt
+ROLLBACK: <verification-workdir>\ROLLBACK.sh
+Original production SHA256 values: {"Mono/EmbedRuntime/mono.dll": {"bytes": 2884608, "sha256": "4829439127752424c4ee6d42c3e379337e125a470df51492ae2493455a336201"}, "VaM_Data/Managed/Assembly-CSharp.dll": {"bytes": 5597184, "sha256": "2440172dcd4fc5bf71b677fc464cc26d7ea0e8d5289209c37217f7870df6875c"}, "PerformancePatches/SkinMeshPartDLL.dll": {"bytes": 308736, "sha256": "651908b5dccb5923ab4075dd4375ff6fa103e03fcac7d2d4e23e6a638911865e"}, "BepInEx/plugins/VaMMemory/VaM.Memory.dll": {"bytes": 9288704, "sha256": "213956eed3e3869254622b44473b635a26932b7321f7ceec185cf1e5d9a75bb8"}, "BepInEx/plugins/Quest3TriggerUI/Quest3TriggerUI.HotLoader.dll": {"bytes": 10752, "sha256": "0b116ab9c876998883e82d3e838d2993f29f8cd63e404f00bdb70e06c67e7e99"}, "BepInEx/plugins/Quest3TriggerUI/Quest3TriggerUI.payload.dll.disabled": {"bytes": 1227264, "sha256": "3dd26fac2e59ce5428bd23fa4d8453676a48ebe8ce5c5f7d082d17d3489f2e83"}, "VaM (OpenVR+OFXR).bat": {"bytes": 413, "sha256": "62eb628b402be50f70d3c1fbe25df263c7685efe6cdcdf45c8a630ef896e4e4c"}, "prefs.json": {"bytes": 4181, "sha256": "4b55d9b1116548816cc06db0b5477fda32e4770714a0b78c035ed5bef2509ebf"}}
+MODIFIED_FILE SHA256: 91a7cc105a1f1e50e1138c73529e3c548f81ffa26b33b9b489a3f911796a0fc4
+BASELINE/MODIFIED/ROLLBACK run on independent fixture game copies; original production runtime, prefs, VR BAT and D: cache unchanged.
+Restored behavior/status: 198 original fixture hashes restored; original core/Mono/skin and texture data/meta restored; fresh receipt files removed; modified validation target and ZIP remain changed.
+Windows fixture uses a VaM.exe marker, not a launched game. Real target Mono, actual original JSON/morph methods and real DirectXTex encode/decode run. Unity native bank-object calls alone are adapted for the isolated host.
+No new end-to-end scene-load timing claim is made by this release.
+
+BASELINE
+COMMAND: "<verification-workdir>\verification 中文 space\VaMAcceleration\runtime\python\python.exe" "<verification-workdir>\verification 中文 space\VaMAcceleration\tools\installer.py" check
+CWD: <verification-workdir>
+INPUT: ''
+LITERAL_STDOUT:
+TARGET_ROOT <verification-workdir>\verification 中文 space
+CACHE_ROOT <verification-workdir>\verification 中文 space\cache 中文 space
+CATALOG packages=2
+CHECK_PASS planned=23 writes=0
+
+LITERAL_STDERR:
+
+EXIT_STATUS: 0
+
+MODIFIED
+COMMAND: "<verification-workdir>\verification 中文 space\VaMAcceleration\runtime\python\python.exe" "<verification-workdir>\verification 中文 space\VaMAcceleration\tools\installer.py" install
+CWD: <verification-workdir>
+INPUT: ''
+LITERAL_STDOUT:
+TARGET_ROOT <verification-workdir>\verification 中文 space
+CACHE_ROOT <verification-workdir>\verification 中文 space\cache 中文 space
+CATALOG packages=2
+NATURALIS_PATCHED everlaster.Naturalis.55.var
+SOURCE_CACHE_PASS built=2 rejected=0
+OFFLINE_IMPORT_PASS rows=1 seconds=0.017 enabled=True hits=0 misses=0 writes=1 rejected=0 ambiguousPaths=0 runtimeRoots=0 blocked=none
+OFFLINE_IMPORT_PASS rows=1 seconds=0.017 enabled=True hits=0 misses=0 writes=1 rejected=0 ambiguousPaths=0 runtimeRoots=0 blocked=none
+OFFLINE_BUILD_RESULT packages=1 errors=0 calls=4 hits=0 recorded=4 positives=2 vertices=4 evicted=0 residentPeak=2 memoryPeak=2184 actualEntryConstructor=True productionDllWrites=0 gameOperations=0
+OFFLINE_BUILD_RESULT packages=1 errors=0 calls=4 hits=0 recorded=4 positives=2 vertices=4 evicted=0 residentPeak=2 memoryPeak=2184 actualEntryConstructor=True productionDllWrites=0 gameOperations=0
+TREE_BUILD_PASS built=2 rejected=0
+BC7_CONVERTED opaque_C.vamcache savedBytes=196608
+INSTALL_PASS version=1.8.26 {"bc7": {"converted": 1, "savedBytes": 196608, "skipped": 1}, "caches": {"ClassificationReceipts": 4, "MorphImports": 2, "PackageTrees": 2, "nativeJSON": 2, "rejected": 0}, "naturalisPatched": 1}
+BACKUP <verification-workdir>\verification 中文 space\VaMAcceleration\backups\20261011-022301-25952
+
+LITERAL_STDERR:
+
+EXIT_STATUS: 0
+
+ROLLBACK
+COMMAND: "<verification-workdir>\rollback 中文 copy\VaMAcceleration\runtime\python\python.exe" "<verification-workdir>\rollback 中文 copy\VaMAcceleration\tools\installer.py" restore
+CWD: <verification-workdir>
+INPUT: ''
+LITERAL_STDOUT:
+RESTORE_PASS files=26
+
+LITERAL_STDERR:
+
+EXIT_STATUS: 0
+
+ROLLBACK_BASELINE
+COMMAND: "<verification-workdir>\rollback 中文 copy\VaMAcceleration\runtime\python\python.exe" "<verification-workdir>\rollback 中文 copy\VaMAcceleration\tools\installer.py" check
+CWD: <verification-workdir>
+INPUT: ''
+LITERAL_STDOUT:
+TARGET_ROOT <verification-workdir>\rollback 中文 copy
+CACHE_ROOT <verification-workdir>\rollback 中文 copy\cache 中文 space
+CATALOG packages=2
+CHECK_PASS planned=23 writes=0
+
+LITERAL_STDERR:
+
+EXIT_STATUS: 0
+
+IDEMPOTENT
+COMMAND: "<verification-workdir>\verification 中文 space\VaMAcceleration\runtime\python\python.exe" "<verification-workdir>\verification 中文 space\VaMAcceleration\tools\installer.py" install
+CWD: <verification-workdir>
+INPUT: ''
+LITERAL_STDOUT:
+TARGET_ROOT <verification-workdir>\verification 中文 space
+CACHE_ROOT <verification-workdir>\verification 中文 space\cache 中文 space
+CATALOG packages=2
+SOURCE_CACHE_PASS built=2 rejected=0
+OFFLINE_IMPORT_PASS rows=1 seconds=0.018 enabled=True hits=0 misses=0 writes=1 rejected=0 ambiguousPaths=0 runtimeRoots=0 blocked=none
+OFFLINE_IMPORT_PASS rows=1 seconds=0.017 enabled=True hits=0 misses=0 writes=1 rejected=0 ambiguousPaths=0 runtimeRoots=0 blocked=none
+OFFLINE_BUILD_RESULT packages=1 errors=0 calls=4 hits=0 recorded=4 positives=2 vertices=4 evicted=0 residentPeak=2 memoryPeak=2184 actualEntryConstructor=True productionDllWrites=0 gameOperations=0
+OFFLINE_BUILD_RESULT packages=1 errors=0 calls=4 hits=0 recorded=4 positives=2 vertices=4 evicted=0 residentPeak=2 memoryPeak=2184 actualEntryConstructor=True productionDllWrites=0 gameOperations=0
+TREE_BUILD_PASS built=2 rejected=0
+INSTALL_PASS version=1.8.26 {"bc7": {"converted": 0, "savedBytes": 0, "skipped": 2}, "caches": {"ClassificationReceipts": 4, "MorphImports": 2, "PackageTrees": 2, "nativeJSON": 2, "rejected": 0}, "naturalisPatched": 0}
+BACKUP <verification-workdir>\verification 中文 space\VaMAcceleration\backups\20261011-022403-59144
+
+LITERAL_STDERR:
+
+EXIT_STATUS: 0
+
+UNSUPPORTED
+COMMAND: "<verification-workdir>\rollback 中文 copy\VaMAcceleration\runtime\python\python.exe" "<verification-workdir>\rollback 中文 copy\VaMAcceleration\tools\installer.py" install
+CWD: <verification-workdir>
+INPUT: ''
+LITERAL_STDOUT:
+TOOL_EXCEPTION: UNSUPPORTED_BASE: VaM_Data/Managed/Assembly-CSharp.dll SHA256=d631542210ce878f7737581e6bdcbfbf4d636140b38699115ca31e11d4fa3bcb
+
+LITERAL_STDERR:
+
+EXIT_STATUS: 70
+
+FAILURE_ROLLBACK
+COMMAND: "<verification-workdir>\rollback 中文 copy\VaMAcceleration\runtime\python\python.exe" "<verification-workdir>\rollback 中文 copy\VaMAcceleration\tools\installer.py" install --no-bc7
+CWD: <verification-workdir>
+INPUT: ''
+LITERAL_STDOUT:
+TARGET_ROOT <verification-workdir>\rollback 中文 copy
+CACHE_ROOT <verification-workdir>\rollback 中文 copy\cache 中文 space
+CATALOG packages=2
+NATURALIS_PATCHED everlaster.Naturalis.55.var
+SOURCE_CACHE_PASS built=2 rejected=0
+OFFLINE_IMPORT_PASS rows=1 seconds=0.016 enabled=True hits=0 misses=0 writes=1 rejected=0 ambiguousPaths=0 runtimeRoots=0 blocked=none
+OFFLINE_IMPORT_PASS rows=1 seconds=0.017 enabled=True hits=0 misses=0 writes=1 rejected=0 ambiguousPaths=0 runtimeRoots=0 blocked=none
+FAILURE_ROLLBACK files=16
+TOOL_EXCEPTION: WORKER_FAILED: NATIVE_BUILD=not-exposed
+COLLECTOR maxGeneration=0 moving=-1 requestedRuntime=v2.0.50727
+READY
+TOOL_EXCEPTION: System.IO.InvalidDataException: offline classifier fingerprint changed: DDBE2F4AC08700BB4092AEDBC0607355B7B9BEF65CB6E876A6D98C942655E2C5
+  at CollectorProbe.Build (Boolean disk) [0x00000] in <filename unknown>:0 
+  at CollectorProbe.Run () [0x00000] in <filename unknown>:0 
+RETURN_IDENTITY action=Run object=00000286B4D95F88 vtable=00000286B3203F60 length=14
+OFFLINE_FAILED
+MEMORY stage=Run private=13328384 workingSet=24489984 heap=786432 used=774144
+
+
+LITERAL_STDERR:
+
+EXIT_STATUS: 70
+
+CONSUME_REPLAY.json
+COMMAND: <verification-workdir>\repository\package\VaMAcceleration\tools\native_port_host.exe "<verification-workdir>\verification 中文 space\Mono\EmbedRuntime\mono.dll" "<verification-workdir>\verification 中文 space\VaM_Data\Managed" "<verification-workdir>\verification 中文 space\Mono\etc" v2.0.50727 "<verification-workdir>\replay worker\PortableOffline.dll" "<verification-workdir>\replay worker;<verification-workdir>\verification 中文 space\VaM_Data\Managed;<verification-workdir>\verification 中文 space\BepInEx\core"
+CWD: <verification-workdir>\replay worker
+INPUT: 'InitializePortable\nVerifyTrees\nRun\nDrop\nQUIT\n'
+LITERAL_STDOUT:
+NATIVE_BUILD=not-exposed
+COLLECTOR maxGeneration=0 moving=-1 requestedRuntime=v2.0.50727
+READY
+RETURN_IDENTITY action=InitializePortable object=000001C2FFEA9F80 vtable=000001C2FF803E30 length=18
+PORTABLE_INIT_PASS
+MEMORY stage=InitializePortable private=17977344 workingSet=29188096 heap=1875968 used=1388544
+RETURN_IDENTITY action=VerifyTrees object=000001C283A84A80 vtable=000001C2FF803E30 length=180
+TREE_REPLAY_PASS count=2 hits=2 misses=0 rejected=0 writes=0 writeRejected=0 sourceBytes=526 hitMs=4.3 writeMs=0.0 treeRoots=0 blueprintHits=0 blueprintBuilds=2 blueprintBytes=1398
+MEMORY stage=VerifyTrees private=21757952 workingSet=32108544 heap=2568192 used=1753088
+FULL_IMPORT_RESULT version=1.8.26.0 imports=1 active=0 unactivated=1 formulas=0 regions=1 bad= errors=0 initRefreshMs=19.166 privateBytesBeforeDigest=29011968 peakWorkingSetBeforeDigest=42893312 digest=104293981457C419CF80906BDCDF0F3A4B3BE27F4BAB66DE39EA39A43C35317B
+FULL_IMPORT_DISK enabled=True hits=0 misses=1 writes=1 slots=8 budget=67108864
+FULL_IMPORT_REPLAY enabled=False hits=0 misses=0 writes=0 rejected=0 ambiguousPaths=0 runtimeRoots=0 blocked=none
+FULL_IMPORT_JSON streamed=1 fallback=0
+RETURN_IDENTITY action=Run object=000001C283A46E00 vtable=000001C2FF803E30 length=105
+FULL_IMPORT_PASS managedImportOriginal=True filterOriginal=True subbankOriginal=True rebuildOriginal=True
+MEMORY stage=Run private=28987392 workingSet=42897408 heap=6180864 used=5242880
+RETURN_IDENTITY action=Drop object=000001C283CA2D80 vtable=000001C2FF803E30 length=16
+FULL_IMPORT_DROP
+MEMORY stage=Drop private=28987392 workingSet=42909696 heap=6180864 used=5242880
+
+LITERAL_STDERR:
+
+EXIT_STATUS: 0
+
+CONSUME_REPLAY.json
+COMMAND: <verification-workdir>\repository\package\VaMAcceleration\tools\native_port_host.exe "<verification-workdir>\verification 中文 space\Mono\EmbedRuntime\mono.dll" "<verification-workdir>\verification 中文 space\VaM_Data\Managed" "<verification-workdir>\verification 中文 space\Mono\etc" v2.0.50727 "<verification-workdir>\replay worker\PortableOffline.dll" "<verification-workdir>\replay worker;<verification-workdir>\verification 中文 space\VaM_Data\Managed;<verification-workdir>\verification 中文 space\BepInEx\core"
+CWD: <verification-workdir>\replay worker
+INPUT: 'InitializePortable\nVerifyTrees\nReplay\nDrop\nQUIT\n'
+LITERAL_STDOUT:
+NATIVE_BUILD=not-exposed
+COLLECTOR maxGeneration=0 moving=-1 requestedRuntime=v2.0.50727
+READY
+RETURN_IDENTITY action=InitializePortable object=0000019235C09F80 vtable=00000192357A3E30 length=18
+PORTABLE_INIT_PASS
+MEMORY stage=InitializePortable private=17604608 workingSet=29007872 heap=1875968 used=1380352
+RETURN_IDENTITY action=VerifyTrees object=0000019238380A80 vtable=00000192357A3E30 length=180
+TREE_REPLAY_PASS count=2 hits=2 misses=0 rejected=0 writes=0 writeRejected=0 sourceBytes=526 hitMs=3.4 writeMs=0.0 treeRoots=0 blueprintHits=0 blueprintBuilds=2 blueprintBytes=1398
+MEMORY stage=VerifyTrees private=20709376 workingSet=31727616 heap=2568192 used=1757184
+FULL_IMPORT_RESULT version=1.8.26.0 imports=1 active=0 unactivated=1 formulas=0 regions=1 bad= errors=0 initRefreshMs=13.030 privateBytesBeforeDigest=29528064 peakWorkingSetBeforeDigest=43388928 digest=104293981457C419CF80906BDCDF0F3A4B3BE27F4BAB66DE39EA39A43C35317B
+FULL_IMPORT_DISK enabled=False hits=0 misses=0 writes=0 slots=8 budget=67108864
+FULL_IMPORT_REPLAY enabled=True hits=1 misses=0 writes=0 rejected=0 ambiguousPaths=0 runtimeRoots=0 blocked=none
+FULL_IMPORT_JSON streamed=0 fallback=0
+RETURN_IDENTITY action=Replay object=0000019235C28000 vtable=00000192357A3E30 length=105
+FULL_IMPORT_PASS managedImportOriginal=True filterOriginal=True subbankOriginal=True rebuildOriginal=True
+MEMORY stage=Replay private=29487104 workingSet=43438080 heap=6176768 used=5238784
+RETURN_IDENTITY action=Drop object=0000019238A8C3C0 vtable=00000192357A3E30 length=16
+FULL_IMPORT_DROP
+MEMORY stage=Drop private=29564928 workingSet=43507712 heap=6176768 used=5238784
+
+LITERAL_STDERR:
+
+EXIT_STATUS: 0
+
+CLASSIFICATION_REPLAY.json
+COMMAND: <verification-workdir>\repository\package\VaMAcceleration\tools\native_port_host.exe "<verification-workdir>\verification 中文 space\Mono\EmbedRuntime\mono.dll" "<verification-workdir>\verification 中文 space\VaM_Data\Managed" "<verification-workdir>\verification 中文 space\Mono\etc" v2.0.50727 "<verification-workdir>\replay worker\OfflineSmallBuilder.dll" "<verification-workdir>\replay worker;<verification-workdir>\verification 中文 space\VaM_Data\Managed;<verification-workdir>\verification 中文 space\BepInEx\core"
+CWD: <verification-workdir>\replay worker
+INPUT: 'Run\nQUIT\n'
+LITERAL_STDOUT:
+NATIVE_BUILD=not-exposed
+COLLECTOR maxGeneration=0 moving=-1 requestedRuntime=v2.0.50727
+READY
+OFFLINE_PACKAGE index=0 files=2 hits=4 recorded=0 ms=17
+RETURN_IDENTITY action=Run object=0000019952593000 vtable=000001994C523E30 length=197
+OFFLINE_BUILD_RESULT packages=1 errors=0 calls=4 hits=4 recorded=0 positives=2 vertices=4 evicted=0 residentPeak=2 memoryPeak=2184 actualEntryConstructor=True productionDllWrites=0 gameOperations=0
+MEMORY stage=Run private=46632960 workingSet=61263872 heap=5967872 used=4177920
+
+LITERAL_STDERR:
+
+EXIT_STATUS: 0
+
+CLASSIFICATION_REPLAY.json
+COMMAND: <verification-workdir>\repository\package\VaMAcceleration\tools\native_port_host.exe "<verification-workdir>\verification 中文 space\Mono\EmbedRuntime\mono.dll" "<verification-workdir>\verification 中文 space\VaM_Data\Managed" "<verification-workdir>\verification 中文 space\Mono\etc" v2.0.50727 "<verification-workdir>\replay worker\OfflineSmallBuilder.dll" "<verification-workdir>\replay worker;<verification-workdir>\verification 中文 space\VaM_Data\Managed;<verification-workdir>\verification 中文 space\BepInEx\core"
+CWD: <verification-workdir>\replay worker
+INPUT: 'Run\nQUIT\n'
+LITERAL_STDOUT:
+NATIVE_BUILD=not-exposed
+COLLECTOR maxGeneration=0 moving=-1 requestedRuntime=v2.0.50727
+READY
+OFFLINE_PACKAGE index=0 files=2 hits=4 recorded=0 ms=16
+RETURN_IDENTITY action=Run object=000001E82A05CC40 vtable=000001E8271A3E30 length=197
+OFFLINE_BUILD_RESULT packages=1 errors=0 calls=4 hits=4 recorded=0 positives=2 vertices=4 evicted=0 residentPeak=2 memoryPeak=2184 actualEntryConstructor=True productionDllWrites=0 gameOperations=0
+MEMORY stage=Run private=46608384 workingSet=61124608 heap=6033408 used=4222976
+
+LITERAL_STDERR:
+
+EXIT_STATUS: 0
+
+BAT_WRAPPER.json
+COMMAND: cmd.exe /d /c "<verification-workdir>\verification 中文 space\Check_VaM_Acceleration.bat"
+CWD: <verification-workdir>
+INPUT: ''
+LITERAL_STDOUT:
+TARGET_ROOT <verification-workdir>\verification 中文 space
+CACHE_ROOT <verification-workdir>\verification 中文 space\cache 中文 space
+CATALOG packages=2
+CHECK_PASS planned=19 writes=0
+
+Exit status: 0
+
+LITERAL_STDERR:
+
+EXIT_STATUS: 0
+
+SHELL_ROLLBACK.json
+COMMAND: "C:\Program Files\Git\bin\bash.exe" <verification-workdir>\ROLLBACK.sh "<verification-workdir>\shell rollback copy"
+CWD: <verification-workdir>
+INPUT: ''
+LITERAL_STDOUT:
+RESTORE_PASS files=26
+
+LITERAL_STDERR:
+
+EXIT_STATUS: 0

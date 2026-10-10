@@ -1,0 +1,1401 @@
+--- /dev/null
++++ b/installer.py
+@@ -0,0 +1,446 @@
++"""Offline installer for the frozen VaM 1.8.26 acceleration set (Windows x64)."""
++from __future__ import annotations
++import argparse
++import csv
++import ctypes
++import hashlib
++import io
++import json
++import os
++from pathlib import Path
++import re
++import shutil
++import subprocess
++import sys
++import tempfile
++import time
++import zipfile
++import zlib
++
++APP = Path(__file__).resolve().parent.parent
++SUBDIRS = ('MorphImports', 'ClassificationReceipts', 'PackageTrees', 'BundleDiskCache', 'CompilerBytecode', 'StartupMorphIndex')
++
++def sha(p: Path) -> str | None:
++    if not p.is_file(): return None
++    with p.open('rb') as f: return hashlib.file_digest(f, 'sha256').hexdigest()
++
++def json_read(p: Path) -> dict:
++    return json.loads(p.read_text('utf-8-sig'))
++
++def atomic(p: Path, data: bytes) -> None:
++    p.parent.mkdir(parents=True, exist_ok=True)
++    fd, name = tempfile.mkstemp(prefix='.vamacc-', dir=p.parent)
++    try:
++        with os.fdopen(fd, 'wb') as stream:
++            stream.write(data); stream.flush(); os.fsync(stream.fileno())
++        os.replace(name, p)
++    finally:
++        if os.path.exists(name): os.unlink(name)
++
++def game_stopped() -> None:
++    # Global check: deliberately stops also when another VaM installation is running.
++    r = subprocess.run(['tasklist.exe', '/FO', 'CSV', '/NH'], capture_output=True, check=True)
++    if any(row and row[0].casefold() == 'vam.exe' for row in csv.reader(io.StringIO(r.stdout.decode('mbcs')))):
++        raise RuntimeError('GAME_RUNNING: exit VaM normally before running this tool')
++
++def cache_root(game: Path) -> Path:
++    prefs = json_read(game / 'prefs.json') if (game / 'prefs.json').is_file() else {}
++    value = prefs.get('cacheFolder') or 'Cache'
++    if not isinstance(value, str): raise ValueError('cacheFolder must be a string')
++    p = Path(value)
++    return Path(os.path.abspath(p if p.is_absolute() else game / p))
++
++def catalog(root: Path) -> list[Path]:
++    result: list[Path] = []
++    pending = [(root, ())]
++    while pending:
++        directory, parents = pending.pop()
++        if not directory.exists(): continue
++        key = str(directory.resolve()).casefold()
++        if key in parents:
++            print('SKIP_DIRECTORY_CYCLE', directory); continue
++        with os.scandir(directory) as children:
++            for child in children:
++                if child.is_dir(follow_symlinks=True): pending.append((Path(child.path), (*parents, key)))
++                elif child.is_file(follow_symlinks=True) and child.name.casefold().endswith('.var'):
++                    result.append(Path(os.path.abspath(child.path)))
++    by_name: dict[str, list[Path]] = {}
++    for p in result: by_name.setdefault(p.stem.casefold(), []).append(p)
++    valid = []
++    for paths in by_name.values():
++        if len(paths) > 1: print('SKIP_AMBIGUOUS_UID', paths[0].stem, 'count=' + str(len(paths)))
++        else:
++            p = paths[0]
++            if any(c in str(p) for c in '\r\n|'): print('SKIP_PROTOCOL_PATH', p)
++            elif not re.fullmatch(r'.+\..+\.\d+', p.stem): print('SKIP_NONSTANDARD_UID', p.name)
++            else: valid.append(p)
++    return sorted(valid, key=lambda p: str(p).casefold())
++
++class Transaction:
++    def __init__(self, game: Path, cache: Path, folder: Path):
++        self.game, self.cache, self.folder = game, cache, folder
++        self.state_path = folder / 'state.json'
++        self.state = dict(status='installing', game=str(game), cache=str(cache), entries=[])
++        folder.mkdir(parents=True)
++        self.save()
++
++    def save(self) -> None:
++        atomic(self.state_path, (json.dumps(self.state, ensure_ascii=False, indent=2) + '\n').encode())
++
++    def allowed(self, p: Path) -> None:
++        # Lexical VAR links are replaced, never written through to shared backing libraries.
++        p = Path(os.path.abspath(p))
++        if not any(p.is_relative_to(root) for root in (self.game, self.cache)):
++            raise ValueError('Transaction target escaped game/cache: ' + str(p))
++
++    def put(self, p: Path, source: Path | bytes) -> bool:
++        return self.put_pair([(p, source)])
++
++    def put_pair(self, items: list[tuple[Path, Path | bytes]]) -> bool:
++        prepared = []
++        for p, source in items:
++            self.allowed(p)
++            digest = sha(source) if isinstance(source, Path) else hashlib.sha256(source).hexdigest()
++            before = sha(p)
++            if before == digest: continue
++            if p.exists() and not p.is_file(): raise ValueError('Not a regular file: ' + str(p))
++            prepared.append((p, source, before, digest))
++        if not prepared: return False
++        game_stopped()
++        start = len(self.state['entries'])
++        for p, source, before, digest in prepared:
++            index = len(self.state['entries'])
++            stat = p.stat() if before else None
++            link = os.readlink(p) if p.is_symlink() else None
++            backup = self.folder / 'backup' / str(index)
++            backup.parent.mkdir(exist_ok=True)
++            if before and not link:
++                backup.parent.mkdir(exist_ok=True); shutil.copy2(p, backup)
++                if sha(backup) != before: raise RuntimeError('Backup verification failed')
++            entry = dict(path=str(p), before=before, after=digest, link=link,
++                         atime=stat.st_atime_ns if stat else None, mtime=stat.st_mtime_ns if stat else None,
++                         backup=str(backup.relative_to(self.folder)), status='pending')
++            self.state['entries'].append(entry)
++        self.save()  # Durable write-ahead record for the entire pair.
++        for offset, (p, source, before, digest) in enumerate(prepared):
++            game_stopped()
++            if sha(p) != before: raise RuntimeError('Target changed before commit: ' + str(p))
++            row = self.state['entries'][start + offset]
++            if row['link']:
++                # Move the link itself, so restoring does not require symlink-creation privileges.
++                os.replace(p, self.folder / row['backup'])
++            if isinstance(source, Path):
++                fd, name = tempfile.mkstemp(prefix='.vamacc-', dir=p.parent if p.parent.exists() else self._parent(p))
++                os.close(fd)
++                try:
++                    shutil.copyfile(source, name)
++                    with open(name, 'rb+') as f: os.fsync(f.fileno())
++                    if sha(Path(name)) != digest: raise RuntimeError('Stage hash mismatch')
++                    os.replace(name, p)
++                finally:
++                    if os.path.exists(name): os.unlink(name)
++            else: atomic(p, source)
++            if sha(p) != digest: raise RuntimeError('Commit hash mismatch')
++            self.state['entries'][start + offset]['status'] = 'written'
++            self.save()
++        return True
++
++    @staticmethod
++    def _parent(p: Path) -> Path:
++        p.parent.mkdir(parents=True, exist_ok=True)
++        return p.parent
++
++    @classmethod
++    def restore(cls, folder: Path, game: Path) -> int:
++        state = json_read(folder / 'state.json')
++        if Path(state['game']) != game: raise ValueError('Backup belongs to a different game root')
++        cache = Path(state['cache'])
++        count = 0
++        for row in reversed(state['entries']):
++            if row['status'] == 'restored': continue
++            p = Path(row['path'])
++            if not any(p.is_relative_to(root) for root in (game, cache)): raise ValueError('Invalid backup target')
++            current = sha(p)
++            backup = folder / row['backup']
++            if row['link'] and backup.is_symlink():
++                target = Path(row['link'])
++                if not target.is_absolute(): target = p.parent / target
++                if sha(target) != row['before']: raise RuntimeError('RESTORE_LINK_SOURCE_CONFLICT: ' + str(p))
++                if current not in (None, row['before'], row['after']): raise RuntimeError('RESTORE_CONFLICT: later modification at ' + str(p))
++                game_stopped(); os.replace(backup, p)
++                if sha(p) != row['before'] or os.readlink(p) != row['link']: raise RuntimeError('Link restore mismatch')
++                row['status'] = 'restored'; count += 1
++                atomic(folder / 'state.json', (json.dumps(state, ensure_ascii=False, indent=2) + '\n').encode())
++                continue
++            if current == row['before'] and (not row['link'] or p.is_symlink()):
++                row['status'] = 'restored'; continue
++            if current != row['after']: raise RuntimeError('RESTORE_CONFLICT: later modification at ' + str(p))
++            game_stopped()
++            if row['before'] is None: p.unlink()
++            elif row['link']:
++                raise RuntimeError('Original symbolic link backup is missing')
++            else:
++                b = folder / row['backup']
++                if sha(b) != row['before']: raise RuntimeError('Backup hash mismatch')
++                atomic(p, b.read_bytes())
++                os.utime(p, ns=(row['atime'], row['mtime']))
++            if sha(p) != row['before']: raise RuntimeError('Restore hash mismatch')
++            row['status'] = 'restored'; count += 1
++            atomic(folder / 'state.json', (json.dumps(state, ensure_ascii=False, indent=2) + '\n').encode())
++        state['status'] = 'restored'
++        atomic(folder / 'state.json', (json.dumps(state, ensure_ascii=False, indent=2) + '\n').encode())
++        return count
++
++def patched(before: bytes, row: dict) -> bytes:
++    if hashlib.sha256(before).hexdigest() != row['base']: raise ValueError('Patch base mismatch')
++    delta = zlib.decompress((APP / row['patch']).read_bytes())
++    if len(delta) != row['length']: raise ValueError('Patch length mismatch')
++    result = bytes(v ^ (before[i] if i < len(before) else 0) for i, v in enumerate(delta))
++    if hashlib.sha256(result).hexdigest() != row['target']: raise ValueError('Patch result mismatch')
++    return result
++
++def configuration(p: Path, updates: dict[tuple[str, str], str]) -> bytes:
++    text = p.read_text('utf-8-sig') if p.exists() else ''
++    lines = text.splitlines(); section = ''; todo = dict(updates); output = []
++    seen: set[tuple[str, str]] = set()
++    for line in lines:
++        match = re.fullmatch(r'\s*\[([^\]]+)\]\s*', line)
++        if match: section = match[1]
++        elif '=' in line and not line.lstrip().startswith(('#', ';')):
++            key = line.split('=', 1)[0].strip(); pair = (section, key)
++            if pair in updates:
++                if pair in seen: raise ValueError('Duplicate owned configuration key: ' + key)
++                line = key + ' = ' + updates[pair]; todo.pop(pair, None); seen.add(pair)
++        output.append(line)
++    for section in dict.fromkeys(k[0] for k in todo):
++        output += ['', '[' + section + ']']
++        output += [k[1] + ' = ' + value for k, value in todo.items() if k[0] == section]
++    return ('\n'.join(output).strip() + '\n').encode('utf-8')
++
++def preflight(game: Path) -> list[tuple[Path, Path | bytes]]:
++    if not (game / 'VaM.exe').is_file(): raise ValueError('VaM.exe missing; extract ZIP into the VaM root')
++    manifest = json_read(APP / 'components.json')
++    plans: list[tuple[Path, Path | bytes]] = []
++    for name, rows in manifest['patches'].items():
++        p = game / name; current = sha(p)
++        if current == rows[0]['target']: continue
++        row = next((r for r in rows if r['base'] == current), None)
++        if row is None: raise ValueError('UNSUPPORTED_BASE: ' + name + ' SHA256=' + str(current))
++        plans.append((p, patched(p.read_bytes(), row)))
++    for name, digest in manifest['payload'].items():
++        source = APP / 'payload' / name
++        if sha(source) != digest: raise ValueError('Damaged payload: ' + name)
++        p = game / name
++        if (name.startswith('BepInEx/core/') or name == 'winhttp.dll') and p.exists() and sha(p) != digest:
++            raise ValueError('BOOTSTRAP_CONFLICT: ' + name)
++        plans.append((p, source))
++    for name in ('Quest3TriggerUI.dll', 'Quest3TriggerUI.payload.dll'):
++        if list((game / 'BepInEx/plugins').rglob(name)): raise ValueError('DUPLICATE_Q3_PLUGIN: ' + name)
++    door = game / 'doorstop_config.ini'
++    if door.exists() and not re.search(r'targetAssembly\s*=\s*BepInEx[\\/]core[\\/]BepInEx.Preloader.dll', door.read_text('utf-8-sig'), re.I):
++        raise ValueError('DOORSTOP_TARGET_CONFLICT')
++    plans.append((door, configuration(door, {('UnityDoorstop', 'enabled'): 'true',
++        ('UnityDoorstop', 'targetAssembly'): r'BepInEx\core\BepInEx.Preloader.dll'})))
++    memory = game / 'BepInEx/config/VaM.Memory.cfg'
++    plans.append((memory, configuration(memory, {('TextureLoading', 'Bc7ToolPath'): str(game / 'BepInEx/plugins/Quest3TriggerUI/texconv.exe'),
++        ('Diagnostics', 'CriticalPathTiming'): 'false'})))
++    ini = game / 'PerformancePatches/SkinMeshPartDLL.ini'
++    if not ini.exists():
++        n = max(1, min(8, (os.cpu_count() or 2) // 2))
++        profile = '\n'.join(f'{key}={n}' for key in ('computeColliders', 'skinmeshPart', 'applyMorphs'))
++        plans.append((ini, ('[threads]\n' + profile + '\nskinmeshPartMaxPerChar=4\napplyMorphMaxPerChar=4\n'
++                           '[threadsVR]\n' + profile + '\nskinmeshPartMaxPerChar=4\napplyMorphMaxPerChar=4\n[profiler]\nenabled=0\n').encode()))
++    return plans
++
++def patch_packages(paths: list[Path], tx: Transaction, work: Path) -> int:
++    profiles = json_read(APP / 'naturalis.json')['versions']; count = 0
++    for p in paths:
++        profile = next((r for r in profiles if r['name'].casefold() == p.name.casefold()), None)
++        if not profile: continue
++        with zipfile.ZipFile(p) as old:
++            infos = old.infolist()
++            if len([i for i in infos if i.filename == profile['entry']]) != 1:
++                print('NATURALIS_SKIP ambiguous entry', p.name); continue
++            source = old.read(profile['entry']); digest = hashlib.sha256(source).hexdigest()
++            if digest == profile['target']: continue
++            if digest != profile['base']:
++                print('NATURALIS_SKIP source hash differs', p.name); continue
++            changed = patched(source, profile)
++            candidate = work / 'candidate.var'
++            with zipfile.ZipFile(candidate, 'w') as new:
++                new.comment = old.comment
++                for info in infos:
++                    if info.filename == profile['entry']: new.writestr(info, changed)
++                    else:
++                        with old.open(info) as src, new.open(info, 'w', force_zip64=info.file_size >= 2**31) as dst:
++                            shutil.copyfileobj(src, dst, 1024 * 1024)
++            with zipfile.ZipFile(candidate) as verify:
++                if verify.testzip() is not None or verify.namelist() != old.namelist(): raise ValueError('VAR rewrite failed')
++        tx.put(p, candidate); candidate.unlink(); count += 1
++        print('NATURALIS_PATCHED', p.name)
++    return count
++
++def host(game: Path, work: Path, helper: str, methods: list[str]) -> str:
++    game_stopped()
++    argv = [str(APP / 'tools/native_port_host.exe'), str(game / 'Mono/EmbedRuntime/mono.dll'),
++        str(game / 'VaM_Data/Managed'), str(game / 'Mono/etc'), 'v2.0.50727', str(work / helper),
++        ';'.join(map(str, [work, game / 'VaM_Data/Managed', game / 'BepInEx/core']))]
++    r = subprocess.run(argv, cwd=work, input=('\n'.join([*methods, 'QUIT']) + '\n').encode(), capture_output=True, timeout=7200)
++    output = r.stdout.decode('utf-8', 'replace').replace('\r', '')
++    with (work / 'workers.log').open('a', encoding='utf-8') as log:
++        log.write(json.dumps(dict(argv=argv, input=methods, exit=r.returncode), ensure_ascii=False) + '\n' + output + r.stderr.decode('utf-8', 'replace'))
++    if r.returncode or any(v in output for v in ('TOOL_EXCEPTION:', 'OFFLINE_FAILED', 'ACTION_FAILED')):
++        raise RuntimeError('WORKER_FAILED: ' + output[-3500:])
++    for line in output.splitlines():
++        if line.startswith(('SOURCE_CACHE_PASS', 'OFFLINE_IMPORT_PASS', 'TREE_BUILD_PASS', 'OFFLINE_BUILD_RESULT')): print(line)
++    return output
++
++def settings(work: Path, name: str, rows: list[str]) -> None:
++    if any('\n' in x or '\r' in x for x in rows): raise ValueError('Worker line separator in path')
++    (work / name).write_text('\n'.join(rows) + '\n', 'utf-8')
++
++def prebuild(game: Path, cache: Path, paths: list[Path], tx: Transaction, work: Path) -> dict:
++    worker = work / 'worker'; worker.mkdir()
++    for p in (APP / 'tools').glob('*'):
++        if p.is_file(): shutil.copyfile(p, worker / p.name)
++    shutil.copyfile(game / 'BepInEx/plugins/VaMMemory/VaM.Memory.dll', worker / 'VaM.Memory.dll')
++    shutil.copyfile(worker / 'VaM.Memory.dll', worker / 'MODIFIED_FILE.dll')
++    settings(worker, 'portable-settings.txt', [str(game)])
++    native = worker / 'native'; native.mkdir()
++    settings(worker, 'source-settings.txt', [str(native), *map(str, paths)])
++    output = host(game, worker, 'PortableOffline.dll', ['InitializePortable', 'SourceCaches'])
++    match = re.search(r'SOURCE_CACHE_PASS built=(\d+) rejected=(\d+)', output)
++    if not match: raise RuntimeError('Source cache completion missing')
++    valid = [p for p in paths if all((native / (p.stem + ext)).is_file() for ext in ('.vamcachejson', '.vamcachemeta'))]
++    for p in valid:
++        tx.put_pair([(cache / 'PackageJSON' / (p.stem + ext), native / (p.stem + ext))
++                     for ext in ('.vamcachejson', '.vamcachemeta')])
++    imports = worker / 'imports'; imports.mkdir()
++    for sex in ('female', 'male'):
++        relevant = [p for p in valid if any(k.startswith('Custom/Atom/Person/Morphs/' + sex + '/') and k.endswith('.vmi')
++                    for k in json_read(native / (p.stem + '.vamcachejson')))]
++        settings(worker, 'full-import-settings.txt', ['Custom/Atom/Person/Morphs/' + sex, str(imports),
++            *[str(p) + '|' + str(cache / 'PackageJSON' / (p.stem + '.vamcachejson')) + '|False' for p in relevant]])
++        host(game, worker, 'PortableOffline.dll', ['InitializePortable', 'Offline', 'Drop'])
++    receipts = worker / 'receipts'; receipts.mkdir()
++    classifier_names = {x.strip() for x in re.findall(r'^CLASSIFICATION_PACKAGE (.+)$', output, re.M)}
++    classifier_paths = [p for p in valid if p.stem in classifier_names]
++    for profile in json_read(APP / 'tools/profiles.json'):
++        for start in range(0, len(classifier_paths), 32):
++            rows = [str(receipts), str(worker / profile['assembly']), profile['method'], profile['fingerprint'],
++                    '512', '65536', str(len(profile['regions'])),
++                    *[','.join(map(str, r)) for r in profile['regions']], *map(str, classifier_paths[start:start + 32])]
++            settings(worker, 'offline-settings.txt', rows)
++            host(game, worker, 'OfflineSmallBuilder.dll', ['Run'])
++    trees = worker / 'trees'; trees.mkdir()
++    settings(worker, 'tree-settings.txt', [str(trees), *[str(cache / 'PackageJSON' / (p.stem + '.vamcachejson')) for p in valid]])
++    host(game, worker, 'PortableOffline.dll', ['InitializePortable', 'PortableTrees'])
++    built = {}
++    for name, source in [('MorphImports', imports), ('ClassificationReceipts', receipts), ('PackageTrees', trees)]:
++        files = [p for p in source.rglob('*') if p.is_file()]
++        for p in files: tx.put(cache / 'VaMMemory' / name / p.relative_to(source), p)
++        built[name] = len(files)
++    built.update(nativeJSON=len(valid), rejected=int(match[2]))
++    shutil.copyfile(worker / 'workers.log', tx.folder / 'workers.log')
++    return built
++
++def command(argv: list[str], allow_keep: bool = False) -> subprocess.CompletedProcess:
++    game_stopped()
++    result = subprocess.run(argv, capture_output=True, timeout=7200)
++    if result.returncode and not (allow_keep and result.returncode == 3):
++        raise RuntimeError('CONVERTER_FAILED: ' + subprocess.list2cmdline(argv) + '\n' + result.stdout.decode('mbcs', 'replace')[-2000:])
++    return result
++
++def convert_bc7(cache: Path, tx: Transaction, work: Path) -> dict:
++    compatibility = str(APP / 'tools/Bc7Compat.exe'); tool = str(APP / 'tools/texconv.exe')
++    count = skipped = saved = 0
++    for data in cache.rglob('*_C.vamcache'):
++        # Never scan backup files, or other named textures/normal/mask caches.
++        if 'VaMMemory' in data.relative_to(cache).parts: continue
++        meta = Path(str(data) + 'meta')
++        if not meta.is_file(): skipped += 1; continue
++        j = json_read(meta); fmt = j.get('format'); length = data.stat().st_size
++        if fmt not in ('RGB24', 'RGBA32') or not 256 * 1024 <= length <= 256 * 1024 * 1024:
++            skipped += 1; continue
++        width, height = int(j['width']), int(j['height'])
++        if not 1 <= width <= 16384 or not 1 <= height <= 16384: skipped += 1; continue
++        bpp = 3 if fmt == 'RGB24' else 4; w, h = width, height; raw = 0; mips = 0
++        for n in range(1, 16):
++            raw += w * h * bpp
++            if raw == length: mips = n; break
++            if w == h == 1: break
++            w, h = max(1, w // 2), max(1, h // 2)
++        if not mips: skipped += 1; continue
++        result = command([compatibility, 'source', str(data), str(width), str(height), str(mips), str(bpp)], True)
++        if result.returncode == 3: skipped += 1; continue
++        result = command([compatibility, 'plan', str(data), str(width), str(height), str(mips), str(length)], True)
++        if result.returncode == 3: skipped += 1; continue
++        tw, th, tm, expected = map(int, result.stdout.decode().split())
++        with tempfile.TemporaryDirectory(prefix='bc7-', dir=work) as temp:
++            stage = Path(temp); source = stage / 'input.dds'; out = stage / 'encoded'; verify = stage / 'decoded'
++            out.mkdir(); verify.mkdir()
++            command([compatibility, 'input', str(data), str(width), str(height), str(mips), str(bpp), str(source)])
++            command([tool, '-nologo', '-dx10', '-f', 'BC7_UNORM', '-bcmax', '-aw', '1024', '-w', str(tw), '-h', str(th), '-m', str(tm), '-o', str(out), str(source)])
++            encoded = out / 'input.DDS'
++            command([tool, '-nologo', '-dx10', '-f', 'R8G8B8A8_UNORM', '-m', str(tm), '-o', str(verify), str(encoded)])
++            result = command([compatibility, 'decoded', str(verify / 'input.DDS'), str(tw), str(th), str(tm)], True)
++            if result.returncode == 3: skipped += 1; continue
++            payload, metadata = stage / 'data.raw', stage / 'metadata.json'
++            command([compatibility, 'extract', str(encoded), str(tw), str(th), str(tm), str(payload)])
++            command([compatibility, 'metadata', str(meta), str(tw), str(th), str(tm), str(metadata)])
++            if payload.stat().st_size != expected or expected >= length: raise ValueError('BC7 saving/length mismatch')
++            tx.put_pair([(data, payload), (meta, metadata)]); count += 1; saved += length - expected
++            print('BC7_CONVERTED', data.name, 'savedBytes=' + str(length - expected))
++    return dict(converted=count, skipped=skipped, savedBytes=saved)
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument('action', choices=['install', 'restore', 'check'])
++    parser.add_argument('--root', type=Path, default=APP.parent)
++    parser.add_argument('--no-bc7', action='store_true')
++    args = parser.parse_args(); game = Path(os.path.abspath(args.root))
++    game_stopped(); cache = cache_root(game)
++    mutex = ctypes.windll.kernel32.CreateMutexW
++    mutex.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p]; mutex.restype = ctypes.c_void_p
++    handle = mutex(None, False, 'Local\\VaMAcceleration_' + hashlib.sha256(str(game).casefold().encode()).hexdigest())
++    if not handle: raise ctypes.WinError()
++    if ctypes.windll.kernel32.GetLastError() == 183:
++        ctypes.windll.kernel32.CloseHandle(ctypes.c_void_p(handle)); raise RuntimeError('INSTALLER_ALREADY_RUNNING')
++    tx = None
++    try:
++        backup_root = game / 'VaMAcceleration/backups'
++        unfinished = [p for p in backup_root.glob('*/state.json') if json_read(p)['status'] == 'installing']
++        if args.action == 'restore':
++            pending = [p for p in backup_root.glob('*/state.json') if json_read(p)['status'] != 'restored' and json_read(p)['entries']]
++            if not pending: print('RESTORE_PASS files=0'); return 0
++            folder = sorted(p.parent for p in pending)[-1]
++            count = Transaction.restore(folder, game)
++            print('RESTORE_PASS files=' + str(count)); return 0
++        if unfinished: raise RuntimeError('INTERRUPTED_TRANSACTION: run Restore_VaM_Acceleration.bat first')
++        plans = preflight(game); paths = catalog(game / 'AddonPackages')
++        print('TARGET_ROOT', game); print('CACHE_ROOT', cache); print('CATALOG packages=' + str(len(paths)))
++        if args.action == 'check': print('CHECK_PASS planned=' + str(len(plans)) + ' writes=0'); return 0
++        folder = backup_root / (time.strftime('%Y%m%d-%H%M%S') + '-' + str(os.getpid()))
++        tx = Transaction(game, cache, folder)
++        with tempfile.TemporaryDirectory(prefix='stage-', dir=folder) as temp:
++            work = Path(temp)
++            for p, source in plans: tx.put(p, source)
++            for name in SUBDIRS: (cache / 'VaMMemory' / name).mkdir(parents=True, exist_ok=True)
++            packages = patch_packages(paths, tx, work)
++            built = prebuild(game, cache, paths, tx, work)
++            bc7 = convert_bc7(cache, tx, work) if not args.no_bc7 else dict(converted=0, skipped=0, savedBytes=0)
++        tx.state.update(status='complete', caches=built, bc7=bc7, naturalisPatched=packages); tx.save()
++        print('INSTALL_PASS version=1.8.26 ' + json.dumps(dict(caches=built, bc7=bc7, naturalisPatched=packages), sort_keys=True))
++        print('BACKUP', folder)
++        return 0
++    except Exception:
++        if tx is not None:
++            try: print('FAILURE_ROLLBACK files=' + str(Transaction.restore(tx.folder, game)))
++            except Exception as error: print('ROLLBACK_PENDING', error)
++        raise
++    finally: ctypes.windll.kernel32.CloseHandle(ctypes.c_void_p(handle))
++
++if __name__ == '__main__':
++    try: sys.exit(main())
++    except Exception as e:
++        print('TOOL_EXCEPTION:', str(e)); sys.exit(70)
+--- /dev/null
++++ b/prepare_release.py
+@@ -0,0 +1,105 @@
++"""Freeze production components and compile isolated portable workers."""
++from __future__ import annotations
++import hashlib
++import json
++from pathlib import Path
++import shutil
++import subprocess
++import zlib
++
++HERE = Path(__file__).resolve().parent
++GAME = HERE.parent.parent
++REPO = HERE / 'repository'
++PACKAGE = REPO / 'package'
++APP = PACKAGE / 'VaMAcceleration'
++CSC = Path('C:/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe')
++
++def sha(p: Path) -> str:
++    return hashlib.file_digest(p.open('rb'), 'sha256').hexdigest()
++
++def copy(source: Path, dest: Path) -> None:
++    dest.parent.mkdir(parents=True, exist_ok=True)
++    shutil.copyfile(source, dest)
++
++def delta(source: Path, target: Path, name: str) -> dict:
++    before, after = source.read_bytes(), target.read_bytes()
++    xor = bytes(v ^ (before[i] if i < len(before) else 0) for i, v in enumerate(after))
++    dest = APP / 'patches' / (name + '.xorz')
++    dest.parent.mkdir(parents=True, exist_ok=True)
++    dest.write_bytes(zlib.compress(xor, 9))
++    return dict(base=sha(source), target=sha(target), length=len(after), patch=dest.relative_to(APP).as_posix())
++
++def compile_tools() -> None:
++    tools = APP / 'tools'
++    tools.mkdir(parents=True, exist_ok=True)
++    refs = [line.strip('"').removeprefix('/reference:') for line in
++            (GAME / '工作区/asset_decode_workset_20261010/build.rsp').read_text('utf-8-sig').splitlines()
++            if line.strip('"').startswith('/reference:')]
++    refs += [str(GAME / 'BepInEx/plugins/VaMMemory/VaM.Memory.dll')]
++    for output, inputs in [('PortableOffline.dll', ['FullImportProbe.cs', 'PortableOffline.cs']),
++                           ('OfflineSmallBuilder.dll', ['OfflineSmallBuilder.cs']),
++                           ('ProfileCompile.dll', ['ProfileCompile.cs'])]:
++        argv = [str(CSC), '/noconfig', '/nologo', '/nostdlib+', '/optimize+', '/target:library',
++                '/out:' + str(tools / output), *['/reference:' + p for p in refs],
++                *[str(HERE / 'src' / p) for p in inputs]]
++        r = subprocess.run(argv, capture_output=True)
++        (HERE / (output + '.build.json')).write_text(json.dumps(dict(argv=argv, exit=r.returncode,
++            stdout=r.stdout.decode('mbcs'), stderr=r.stderr.decode('mbcs')), ensure_ascii=False, indent=2), 'utf-8')
++        if r.returncode:
++            raise RuntimeError(r.stdout.decode('mbcs'))
++    copy(HERE / 'profiles.json', tools / 'profiles.json')
++    copy(GAME / '工作区/mono_unity_liveness_bridge_20261007/native_port_host.exe', tools / 'native_port_host.exe')
++    build = HERE / 'profile-build'
++    build.mkdir(exist_ok=True)
++    (build / 'compile-settings.txt').write_text('\n'.join(map(str, [build, GAME / 'VaM_Data/Managed', HERE / 'src/Classifier0.cs', HERE / 'src/Classifier1.cs'])) + '\n', 'utf-8')
++    argv = [str(tools / 'native_port_host.exe'), str(GAME / 'Mono/EmbedRuntime/mono.dll'), str(GAME / 'VaM_Data/Managed'),
++            str(GAME / 'Mono/etc'), 'v2.0.50727', str(tools / 'ProfileCompile.dll'), str(GAME / 'VaM_Data/Managed')]
++    r = subprocess.run(argv, cwd=build, input=b'Compile\nQUIT\n', capture_output=True, timeout=120)
++    output = r.stdout.decode('utf-8')
++    if r.returncode or 'PROFILE_COMPILE_PASS' not in output:
++        raise RuntimeError(output + r.stderr.decode('utf-8'))
++    for i in range(2):
++        matches = sorted(build.glob('Classifier' + str(i) + '*.dll'), key=lambda p: p.stat().st_mtime_ns)
++        if not matches: raise RuntimeError('No compiled profile: ' + output)
++        copy(matches[-1], tools / ('Classifier' + str(i) + '.dll'))
++    (HERE / 'PROFILE_COMPILE.json').write_text(json.dumps(dict(argv=argv, input='Compile\nQUIT\n', stdout=output, exit=r.returncode), ensure_ascii=False, indent=2), 'utf-8')
++    copy(GAME / 'BepInEx/plugins/Quest3TriggerUI/texconv.exe', tools / 'texconv.exe')
++    copy(GAME / 'BepInEx/plugins/Quest3TriggerUI/Bc7Compat.exe', tools / 'Bc7Compat.exe')
++    for p in (GAME / 'BepInEx/cache/VaMMemory/support/63644d7fd16fb06d/python').rglob('*'):
++        if p.is_file(): copy(p, APP / 'runtime/python' / p.relative_to(GAME / 'BepInEx/cache/VaMMemory/support/63644d7fd16fb06d/python'))
++    (APP / 'runtime/python/python312._pth').write_text('python312.zip\n.\nDLLs\n../../tools\n', 'ascii')
++
++def main() -> None:
++    frozen = json.loads((HERE / 'START.json').read_text('utf-8'))
++    print(json.dumps(frozen, ensure_ascii=True))
++    runtime = ['BepInEx/plugins/VaMMemory/VaM.Memory.dll',
++               'BepInEx/plugins/Quest3TriggerUI/Quest3TriggerUI.payload.dll.disabled',
++               'BepInEx/plugins/Quest3TriggerUI/Quest3TriggerUI.HotLoader.dll',
++               'winhttp.dll']
++    runtime += ['BepInEx/core/' + p.name for p in (GAME / 'BepInEx/core').glob('*.dll') if p.name != 'XUnity.Common.dll']
++    for path in runtime: copy(GAME / path, APP / 'payload' / path)
++    copy(GAME / 'BepInEx/plugins/Quest3TriggerUI/texconv.exe', APP / 'payload/BepInEx/plugins/Quest3TriggerUI/texconv.exe')
++    targets = {}
++    core = GAME / 'VaM_Data/Managed/Assembly-CSharp.dll'
++    targets['VaM_Data/Managed/Assembly-CSharp.dll'] = [delta(GAME / 'VaM_Data/Managed' / name, core, 'core' + str(i)) for i, name in enumerate(
++        ['Assembly-CSharp备份.dll', 'Assembly-CSharp备份2.dll', 'Assembly-CSharp备份3.dll'])]
++    targets['Mono/EmbedRuntime/mono.dll'] = [delta(GAME / 'Mono/EmbedRuntime/mono备份.dll', GAME / 'Mono/EmbedRuntime/mono.dll', 'mono')]
++    skin = GAME / 'PerformancePatches/SkinMeshPartDLL.dll'
++    targets['PerformancePatches/SkinMeshPartDLL.dll'] = [delta(GAME / path, skin, 'skin' + str(i)) for i, path in enumerate([
++        '工作区/mono_unity_liveness_bridge_20261007/ldr_load_20261009/native_skin_threads_20261009/BASELINE/SkinMeshPartDLL.dll',
++        '工作区/asset_creation_io_20261010/deployment_copy/PerformancePatches/SkinMeshPartDLL.dll',
++        '工作区/mono_unity_liveness_bridge_20261007/ldr_load_20261009/native_skin_threads_20261009/MODIFIED/SkinMeshPartDLL.dll',
++        '工作区/skin_main_inline_20261010/BASELINE_FILE.dll'])]
++    old_skin = APP / 'payload/PerformancePatches/SkinMeshPartDLL.dll'
++    if old_skin.exists(): old_skin.unlink()
++    compile_tools()
++    manifest = dict(version='1.8.26', quest3='4.6.302', game='1.22.0.12', patches=targets,
++                    payload={p.relative_to(APP / 'payload').as_posix(): sha(p) for p in (APP / 'payload').rglob('*') if p.is_file()})
++    (APP / 'components.json').write_text(json.dumps(manifest, indent=2) + '\n', 'utf-8')
++    print('PREPARE_RELEASE_PASS components=' + str(len(manifest['payload'])) + ' helpers=4 productionWrites=0')
++
++if __name__ == '__main__':
++    try: main()
++    except Exception as e:
++        print('TOOL_EXCEPTION:', repr(e))
++        raise SystemExit(70)
+--- /dev/null
++++ b/verify_release.py
+@@ -0,0 +1,106 @@
++"""End-to-end offline release test; uses disposable copies, never starts VaM."""
++from __future__ import annotations
++import hashlib
++import importlib.util
++import json
++from pathlib import Path
++import shutil
++import struct
++import subprocess
++import sys
++import zipfile
++
++HERE = Path(__file__).resolve().parent
++GAME = HERE.parent.parent
++APP = HERE / 'repository/package/VaMAcceleration'
++ROOT = HERE / 'verification 中文 space'
++RECORDS: list[dict] = []
++
++def digest(p: Path) -> str:
++    with p.open('rb') as f: return hashlib.file_digest(f, 'sha256').hexdigest()
++
++def run(label: str, argv: list[str], data: str = '', code: int = 0, cwd: Path = HERE) -> str:
++    r = subprocess.run(argv, cwd=cwd, input=data.encode(), capture_output=True, timeout=600)
++    row = dict(label=label, argv=argv, cwd=str(cwd), input=data, stdout=r.stdout.decode('utf-8', 'replace'),
++               stderr=r.stderr.decode('utf-8', 'replace'), exit=r.returncode)
++    RECORDS.append(row)
++    print(label, 'exit=' + str(r.returncode), row['stdout'][-3500:], flush=True)
++    (HERE / 'TEST_RECORDS.json').write_text(json.dumps(RECORDS, ensure_ascii=False, indent=2) + '\n', 'utf-8')
++    assert r.returncode == code, row
++    return row['stdout']
++
++def main() -> None:
++    assert not ROOT.exists(), 'Use a new disposable verification directory'
++    ROOT.mkdir()
++    for directory in ('VaM_Data/Managed', 'Mono', 'BepInEx/core'):
++        shutil.copytree(GAME / directory, ROOT / directory)
++    shutil.copytree(APP, ROOT / 'VaMAcceleration')
++    shutil.copyfile(GAME / 'VaM_Data/Managed/Assembly-CSharp备份.dll', ROOT / 'VaM_Data/Managed/Assembly-CSharp.dll')
++    shutil.copyfile(GAME / 'Mono/EmbedRuntime/mono备份.dll', ROOT / 'Mono/EmbedRuntime/mono.dll')
++    skin = ROOT / 'PerformancePatches/SkinMeshPartDLL.dll'; skin.parent.mkdir()
++    shutil.copyfile(GAME / '工作区/mono_unity_liveness_bridge_20261007/ldr_load_20261009/native_skin_threads_20261009/BASELINE/SkinMeshPartDLL.dll', skin)
++    (ROOT / 'VaM.exe').touch()
++    (ROOT / 'prefs.json').write_text('{"cacheFolder":"cache 中文 space"}', 'utf-8')
++    packages = ROOT / 'AddonPackages'; packages.mkdir()
++    with zipfile.ZipFile(packages / 'Test.Morphs.1.var', 'w', zipfile.ZIP_DEFLATED) as z:
++        for sex in ('female', 'male'):
++            z.writestr('Custom/Atom/Person/Morphs/' + sex + '/test.vmi', json.dumps(dict(id='test', displayName='test', group='Actor', region='Body', min=-1, max=1, numDeltas=1, formulas=[]), ensure_ascii=False))
++            z.writestr('Custom/Atom/Person/Morphs/' + sex + '/test.vmb', struct.pack('<iifff', 1, 265, 0.1, 0, 0))
++    with zipfile.ZipFile(packages / 'everlaster.Naturalis.55.var', 'w', zipfile.ZIP_DEFLATED) as z:
++        z.writestr('Custom/Scripts/everlaster/Naturalis/src/Common/MorphListener.cs', (GAME / '工作区/naturalis_morph_versions_20261002/v55/BASELINE_FILE.cs').read_bytes())
++        z.writestr('meta.json', '{"licenseType":"CC BY"}')
++        z.writestr('unchanged.bin', b'Unchanged fixture asset\x00\x01')
++    cache = ROOT / 'cache 中文 space'; cache.mkdir()
++    for name, pixel in [('opaque_C', b'\x30\x60\x90\xff'), ('transparent_C', b'\x30\x60\x90\x50'), ('normal_N', b'\x80\x80\xff\xff')]:
++        data = cache / (name + '.vamcache'); data.write_bytes(pixel * (256 * 256))
++        Path(str(data) + 'meta').write_text(json.dumps(dict(width='256', height='256', format='RGBA32', size=str(data.stat().st_size), date='fixture')), 'utf-8')
++    before = {p.relative_to(ROOT).as_posix(): digest(p) for p in ROOT.rglob('*') if p.is_file() and not p.is_relative_to(ROOT / 'VaMAcceleration')}
++    (HERE / 'FIXTURE_BASELINE.json').write_text(json.dumps(before, ensure_ascii=False, indent=2), 'utf-8')
++    cli = [str(ROOT / 'VaMAcceleration/runtime/python/python.exe'), str(ROOT / 'VaMAcceleration/tools/installer.py')]
++    run('BASELINE', [*cli, 'check'])
++    assert not (cache / 'VaMMemory').exists()
++    modified = run('MODIFIED', [*cli, 'install'])
++    assert '"converted": 1' in modified and '"naturalisPatched": 1' in modified
++    assert '"ClassificationReceipts": 4' in modified and 'OFFLINE_BUILD_RESULT packages=1' in modified
++    assert json.loads((cache / 'opaque_C.vamcachemeta').read_text())['format'] == 'BC7'
++    assert digest(cache / 'transparent_C.vamcache') == before['cache 中文 space/transparent_C.vamcache']
++    assert digest(cache / 'normal_N.vamcache') == before['cache 中文 space/normal_N.vamcache']
++    with zipfile.ZipFile(packages / 'everlaster.Naturalis.55.var') as z:
++        assert z.read('unchanged.bin') == b'Unchanged fixture asset\x00\x01'
++        profile = next(r for r in json.loads((APP / 'naturalis.json').read_text())['versions'] if r['name'] == 'everlaster.Naturalis.55.var')
++        assert hashlib.sha256(z.read(profile['entry'])).hexdigest() == profile['target']
++    # Keep the modified test target changed; rollback is tested on an independent second copy.
++    rollback = HERE / 'rollback 中文 copy'; shutil.copytree(ROOT, rollback)
++    for p in (rollback / 'VaMAcceleration/backups').glob('*/state.json'):
++        state = json.loads(p.read_text()); state['game'] = str(rollback); state['cache'] = str(rollback / 'cache 中文 space')
++        for row in state['entries']: row['path'] = str(rollback / Path(row['path']).relative_to(ROOT))
++        p.write_text(json.dumps(state, ensure_ascii=False, indent=2), 'utf-8')
++    rbcli = [str(rollback / 'VaMAcceleration/runtime/python/python.exe'), str(rollback / 'VaMAcceleration/tools/installer.py')]
++    run('ROLLBACK', [*rbcli, 'restore'])
++    for name, expected in before.items(): assert digest(rollback / name) == expected, name
++    assert not any((rollback / 'cache 中文 space/VaMMemory').rglob('*.mri'))
++    assert digest(ROOT / 'VaM_Data/Managed/Assembly-CSharp.dll') == json.loads((APP / 'components.json').read_text())['patches']['VaM_Data/Managed/Assembly-CSharp.dll'][0]['target']
++    run('ROLLBACK_BASELINE', [*rbcli, 'check'])
++    # A repeat installation retains the JSON source timestamps and produces no rewrites.
++    first = {str(p): (digest(p), p.stat().st_mtime_ns) for p in (cache / 'PackageJSON').glob('*')}
++    repeat = run('IDEMPOTENT', [*cli, 'install'])
++    assert '"converted": 0' in repeat
++    assert first == {str(p): (digest(p), p.stat().st_mtime_ns) for p in (cache / 'PackageJSON').glob('*')}
++    newest = sorted((ROOT / 'VaMAcceleration/backups').glob('*/state.json'))[-1]
++    assert json.loads(newest.read_text())['entries'] == [], 'Repeat installation rewrote stable outputs'
++    # Typed preflight rejects unknown binary before any production-like changes.
++    p = rollback / 'VaM_Data/Managed/Assembly-CSharp.dll'; original = p.read_bytes(); p.write_bytes(b'unsupported core')
++    bad = run('UNSUPPORTED', [*rbcli, 'install'], code=70)
++    assert 'UNSUPPORTED_BASE' in bad; p.write_bytes(original)
++    # Inject a corrupt classification fingerprint after core replacement: full failure rollback.
++    profiles = rollback / 'VaMAcceleration/tools/profiles.json'; good = profiles.read_bytes(); j = json.loads(good); j[0]['fingerprint'] = '0' * 64; profiles.write_text(json.dumps(j))
++    failure = run('FAILURE_ROLLBACK', [*rbcli, 'install', '--no-bc7'], code=70)
++    assert 'FAILURE_ROLLBACK files=' in failure
++    for name, expected in before.items(): assert digest(rollback / name) == expected, name
++    profiles.write_bytes(good)
++    print('RELEASE_TEST_PASS baseline=check modified=full-install rollback=independent-copy BC7=real-encode-decode idempotent=True failureRollback=True productionWrites=0')
++
++if __name__ == '__main__':
++    try: main()
++    except Exception as e:
++        print('TOOL_EXCEPTION:', repr(e)); raise
+--- /dev/null
++++ b/src/Classifier0.cs
+@@ -0,0 +1,30 @@
++using System;using System.Collections.Generic;using System.IO;using UnityEngine;using MVR.FileManagementSecure;
++namespace NAT.Common { public class MorphListener { HashSet<int> _vertexIndices; long _classificationFiles; long _classificationVertices; const float FILTER_STRENGTH=0.005f;
++bool ClassifyMorphFile(string path)
++        {
++            using(var file = new System.IO.MemoryStream(MVR.FileManagementSecure.FileManagerSecure.ReadAllBytes(path), false))
++            using(var reader = new System.IO.BinaryReader(file))
++            {
++                int count = reader.ReadInt32();
++                if(count < 0 || (long)count * 16 > file.Length - 4)
++                {
++                    throw new System.IO.InvalidDataException("Invalid morph delta payload");
++                }
++
++                bool included = false;
++                for(int i = 0; i < count; i++)
++                {
++                    int vertex = reader.ReadInt32();
++                    var delta = new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
++                    if(_vertexIndices.Contains(vertex) && delta.magnitude > FILTER_STRENGTH)
++                    {
++                        included = true;
++                    }
++                }
++
++                _classificationFiles++;
++                _classificationVertices += count;
++                return included;
++            }
++        }
++}}
+--- /dev/null
++++ b/src/Classifier1.cs
+@@ -0,0 +1,30 @@
++using System;using System.Collections.Generic;using System.IO;using UnityEngine;using MVR.FileManagementSecure;
++namespace NAT.Common { public class MorphListener { HashSet<int> _vertexIndices; long _classificationFiles; long _classificationVertices; const float FILTER_STRENGTH=0.005f;
++bool IncludeMorphFile(string path)
++        {
++            using(var file = new MemoryStream(FileManagerSecure.ReadAllBytes(path), false))
++            using(var reader = new BinaryReader(file))
++            {
++                int count = reader.ReadInt32();
++                if(count < 0 || (long)count * 16 > file.Length - 4)
++                {
++                    throw new InvalidDataException("Invalid morph delta payload");
++                }
++
++                bool included = false;
++                for(int i = 0; i < count; i++)
++                {
++                    int vertex = reader.ReadInt32();
++                    var delta = new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
++                    if(_vertexIndices.Contains(vertex) && delta.magnitude > FILTER_STRENGTH)
++                    {
++                        included = true;
++                    }
++                }
++
++                _classificationFiles++;
++                _classificationVertices += count;
++                return included;
++            }
++        }
++}}
+--- /dev/null
++++ b/src/FullImportProbe.cs
+@@ -0,0 +1,294 @@
++using System;
++using System.Collections;
++using System.Collections.Generic;
++using System.Diagnostics;
++using System.Globalization;
++using System.IO;
++using System.Reflection;
++using System.Reflection.Emit;
++using System.Runtime.Serialization;
++using System.Runtime.InteropServices;
++using System.Security.Cryptography;
++using System.Text;
++using HarmonyLib;
++using ICSharpCode.SharpZipLib.Zip;
++using MVR.FileManagement;
++using SimpleJSON;
++using UnityEngine;
++
++// This helper is loaded by the isolated native Mono host, never by VaM.
++public static partial class CollectorProbe {
++    static readonly BindingFlags All = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
++    sealed class Identity : IEqualityComparer<object> {
++        public new bool Equals(object a, object b) { return ReferenceEquals(a, b); }
++        public int GetHashCode(object a) { return System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(a); }
++    }
++    static readonly Dictionary<object, string> names = new Dictionary<object, string>(new Identity());
++    static readonly Dictionary<object, object> links = new Dictionary<object, object>(new Identity());
++    static readonly Dictionary<object, List<DAZMorphSubBank>> children = new Dictionary<object, List<DAZMorphSubBank>>(new Identity());
++    static readonly List<VarPackage> packages = new List<VarPackage>();
++    static readonly List<ZipFile> archives = new List<ZipFile>();
++    static readonly List<string> errors = new List<string>();
++    static readonly List<WeakReference> oldOwners = new List<WeakReference>();
++    static Assembly memory;
++    static Type feature;
++    static string folder;
++    static int imports, checks, replayScenario;
++    static bool coexist;
++    [StructLayout(LayoutKind.Sequential)] struct MemoryCounters {
++        internal uint Size, PageFaults;
++        internal UIntPtr PeakWorkingSet, WorkingSet, PeakPagedPool, PagedPool, PeakNonPagedPool, NonPagedPool, Pagefile, PeakPagefile, PrivateUsage;
++    }
++    [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
++    [DllImport("psapi.dll", SetLastError=true)] static extern bool GetProcessMemoryInfo(IntPtr process, ref MemoryCounters counters, uint size);
++    static void Require(bool value, string message) { checks++; if (!value) throw new Exception(message); }
++    static object Make(Type type) {
++        object value = FormatterServices.GetUninitializedObject(type);
++        if (typeof(UnityEngine.Object).IsAssignableFrom(type)) Set(value, "m_CachedPtr", new IntPtr(1));
++        return value;
++    }
++    static void Set(object owner, string name, object value) {
++        FieldInfo field = AccessTools.Field(owner is Type ? (Type)owner : owner.GetType(), name);
++        if (field == null) throw new MissingFieldException(name);
++        field.SetValue(owner is Type ? null : owner, value);
++    }
++    static void Property(object owner, string name, object value) {
++        PropertyInfo property = owner.GetType().GetProperty(name, All);
++        if (property == null) throw new MissingMemberException(name);
++        property.SetValue(owner, value, null);
++    }
++    static object Call(object owner, string name, params object[] args) {
++        try { return AccessTools.Method(owner is Type ? (Type)owner : owner.GetType(), name).Invoke(owner is Type ? null : owner, args); }
++        catch (TargetInvocationException error) { throw error.InnerException; }
++    }
++    static DAZMorphBank NewBank() {
++        var bank = (DAZMorphBank)Make(typeof(DAZMorphBank));
++        bank.autoImportFolder = folder;
++        GameObject go = NewObject("full-bank"); links[bank] = go;
++        children[bank] = new List<DAZMorphSubBank>();
++        return bank;
++    }
++    static GameObject NewObject(string name) { var go = (GameObject)Make(typeof(GameObject)); names[go] = name; return go; }
++    static GameObject GameObjectOf(Component component) { return (GameObject)links[component]; }
++    static Transform TransformOf(UnityEngine.Object owner) {
++        object go = owner is Component ? links[owner] : owner;
++        object value;
++        if (!links.TryGetValue(go, out value)) { value = Make(typeof(Transform)); links[go] = value; links[value] = go; }
++        return (Transform)value;
++    }
++    static void Parent(Transform child, Transform parent) { links[links[child]] = parent; }
++    static DAZMorphSubBank AddComponent(GameObject go) {
++        var sub = (DAZMorphSubBank)Make(typeof(DAZMorphSubBank));
++        sub.alwaysSetDirtyOnEditorChange = true; links[sub] = go;
++        Transform parent = (Transform)links[go]; object parentGo = links[parent];
++        object bank = null;
++        foreach (object key in children.Keys) if (ReferenceEquals(links[key], parentGo)) { bank = key; break; }
++        Require(bank != null, "new subbank parent missing"); children[bank].Add(sub);
++        return sub;
++    }
++    static string Name(UnityEngine.Object obj) { return names[obj is Component ? links[obj] : obj]; }
++    static DAZMorphSubBank[] Children(Component bank) { return children[bank].ToArray(); }
++    static bool Playing() { return true; }
++    static float Clock() { return (float)(Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency); }
++    static bool Different(UnityEngine.Object a, UnityEngine.Object b) { return !ReferenceEquals(a, b); }
++    static bool Same(UnityEngine.Object a, UnityEngine.Object b) { return ReferenceEquals(a, b); }
++    static void Log(object value) { Console.WriteLine("ORIGINAL_LOG " + value); }
++    static void LogError(object value) { errors.Add(Convert.ToString(value)); Console.WriteLine("ORIGINAL_ERROR " + value); }
++    static void ImportSeen() {
++        imports++;
++        if(imports==2 && replayScenario==2) InstallMetaHook();
++        if(imports==2 && replayScenario==3) System.Threading.Thread.CurrentThread.CurrentCulture=CultureInfo.GetCultureInfo("fr-FR");
++    }
++    static void ForeignMeta(DAZMorph __instance) {__instance.displayName+="-foreign";}
++    static void InstallMetaHook() {new Harmony("offline.full-import.foreign").Patch(AccessTools.Method(typeof(DAZMorph),"LoadMetaFromJSON"),postfix:new HarmonyMethod(typeof(CollectorProbe),"ForeignMeta"));}
++    static IEnumerable<CodeInstruction> Native(IEnumerable<CodeInstruction> input, MethodBase __originalMethod) {
++        if(__originalMethod==AccessTools.Method(typeof(DAZMorphBank),"RuntimeImportMorph")) yield return new CodeInstruction(OpCodes.Call,AccessTools.Method(typeof(CollectorProbe),"ImportSeen"));
++        foreach (CodeInstruction code in input) {
++            var ctor = code.operand as ConstructorInfo;
++            var method = code.operand as MethodInfo;
++            string replacement = null;
++            if (ctor != null && ctor.DeclaringType == typeof(GameObject) && ctor.GetParameters().Length == 1) replacement = "NewObject";
++            if (method != null) {
++                if (method.DeclaringType == typeof(Application) && method.Name == "get_isPlaying") replacement = "Playing";
++                else if (method.DeclaringType == typeof(Time) && method.Name == "get_realtimeSinceStartup") replacement = "Clock";
++                else if (method.Name == "get_gameObject" && method.DeclaringType == typeof(Component)) replacement = "GameObjectOf";
++                else if (method.Name == "get_transform" && (method.DeclaringType == typeof(Component) || method.DeclaringType == typeof(GameObject))) replacement = "TransformOf";
++                else if (method.Name == "set_parent" && method.DeclaringType == typeof(Transform)) replacement = "Parent";
++                else if (method.Name == "get_name" && method.DeclaringType == typeof(UnityEngine.Object)) replacement = "Name";
++                else if (method.Name == "GetComponentsInChildren" && method.IsGenericMethod && method.GetGenericArguments()[0] == typeof(DAZMorphSubBank)) replacement = "Children";
++                else if (method.Name == "AddComponent" && method.IsGenericMethod && method.GetGenericArguments()[0] == typeof(DAZMorphSubBank)) replacement = "AddComponent";
++                else if (method.DeclaringType == typeof(UnityEngine.Object) && method.Name == "op_Inequality") replacement = "Different";
++                else if (method.DeclaringType == typeof(UnityEngine.Object) && method.Name == "op_Equality") replacement = "Same";
++                else if (method.DeclaringType == typeof(UnityEngine.Debug) && method.Name == "Log") replacement = "Log";
++                else if (method.DeclaringType == typeof(UnityEngine.Debug) && method.Name == "LogError") replacement = "LogError";
++            }
++            if (replacement != null) { code.opcode = OpCodes.Call; code.operand = AccessTools.Method(typeof(CollectorProbe), replacement); }
++            yield return code;
++        }
++    }
++    static void Setup(bool replay = false) {
++        memory = Assembly.LoadFrom("VaM.Memory.dll"); feature = memory.GetType("VaM.Memory.MorphSnapshotState", true);
++        Call(feature, "Install", new Harmony((string)feature.GetField("Id").GetRawConstantValue()));
++        Call(memory.GetType("PackageStreamRuntime", true), "Install", new Harmony("full-import.original-package-stream"));
++        var fixture = new Harmony("offline.full-import.native-only");
++        foreach (Type type in new[] { typeof(DAZMorphBank), typeof(DAZMorphSubBank) })
++            foreach (MethodInfo method in type.GetMethods(All | BindingFlags.DeclaredOnly))
++                if (method.GetMethodBody() != null) fixture.Patch(method, transpiler: new HarmonyMethod(typeof(CollectorProbe), "Native"));
++        fixture.Patch(AccessTools.Method(typeof(DAZMorph), "Init"), transpiler: new HarmonyMethod(typeof(CollectorProbe), "Native"));
++        fixture.Patch(AccessTools.Method(typeof(SuperController), "LogError", new[] { typeof(string) }), prefix: new HarmonyMethod(typeof(CollectorProbe), "ControllerError"));
++        string[] settings = File.ReadAllLines("full-import-settings.txt"); folder = settings[0];
++        var fileUids = new Dictionary<string, VarFileEntry>(); var filePaths = new Dictionary<string, VarFileEntry>();
++        var directoryUids = new Dictionary<string, VarDirectoryEntry>(); var directoryPaths = new Dictionary<string, VarDirectoryEntry>();
++        var allDirectories = new HashSet<VarDirectoryEntry>();
++        Set(typeof(FileManager), "uidToVarFileEntry", fileUids); Set(typeof(FileManager), "pathToVarFileEntry", filePaths);
++        Set(typeof(FileManager), "uidToVarDirectoryEntry", directoryUids); Set(typeof(FileManager), "pathToVarDirectoryEntry", directoryPaths);
++        Set(typeof(FileManager), "allVarDirectoryEntries", allDirectories);
++        ZipConstants.DefaultCodePage = 0;
++        for (int p = 2; p < settings.Length; p++) {
++            string[] item = settings[p].Split('|'); var info = new FileInfo(item[0]);
++            var package = (VarPackage)Make(typeof(VarPackage)); string uid = Path.GetFileNameWithoutExtension(info.Name);
++            foreach (string name in new[] { "Uid", "Path", "FullPath", "SlashPath", "FullSlashPath" }) Property(package, name, name == "Uid" ? uid : info.FullName);
++            Property(package, "Size", info.Length); Property(package, "LastWriteTime", info.LastWriteTime);
++            Property(package, "Version", int.Parse(uid.Substring(uid.LastIndexOf('.') + 1))); Property(package, "LicenseType", "CC BY"); package.isNewestEnabledVersion = true;
++            Property(package, "CachedUidColon", uid + ":"); Property(package, "CachedUidColonSlash", uid + ":/");
++            Property(package, "CachedPathColon", info.FullName + ":"); Property(package, "CachedPathColonBackslash", info.FullName + ":\\");
++            Property(package, "CachedFullPathColon", info.FullName + ":"); Property(package, "CachedFullPathColonBackslash", info.FullName + ":\\");
++            Property(package, "CachedAddonPrefsPfx", "fixture_sources/full-import/prefs/" + uid + "/");
++            var group = (VarPackageGroup)Make(typeof(VarPackageGroup)); Set(group, "customOptions", new Dictionary<string, bool> { { "preloadMorphs", item[2] == "True" } }); Property(package, "Group", group);
++            Set(package, "_jsonCachePath", item[1]); var zip = new ZipFile(File.OpenRead(info.FullName)); Set(package, "_zipFile", zip); archives.Add(zip); packages.Add(package);
++            var dirs = new Dictionary<string, VarDirectoryEntry>();
++            var root = new VarDirectoryEntry(package, folder, null); dirs.Add(folder, root);
++            foreach (ZipEntry entry in zip) {
++                if (!entry.Name.StartsWith(folder + "/", StringComparison.Ordinal) || entry.IsDirectory) continue;
++                string relative = entry.Name.Substring(folder.Length + 1); string path = folder;
++                string[] segments = relative.Split('/');
++                for (int n = 0; n < segments.Length - 1; n++) {
++                    string next = path + "/" + segments[n];
++                    if (!dirs.ContainsKey(next)) { var child = new VarDirectoryEntry(package, next, dirs[path]); ((HashSet<VarDirectoryEntry>)AccessTools.Field(typeof(VarDirectoryEntry), "varSubDirectories").GetValue(dirs[path])).Add(child); dirs.Add(next, child); }
++                    path = next;
++                }
++                var file = new VarFileEntry(package, entry.Name, entry.DateTime, entry.Size, false);
++                ((List<VarFileEntry>)AccessTools.Field(typeof(VarDirectoryEntry), "varFileEntries").GetValue(dirs[path])).Add(file);
++                fileUids[FileManager.CleanFilePath(file.Uid)] = file; filePaths[FileManager.CleanFilePath(file.Path)] = file;
++            }
++            foreach (VarDirectoryEntry dir in dirs.Values) { allDirectories.Add(dir); directoryUids[FileManager.CleanDirectoryPath(dir.Uid)] = dir; directoryPaths[FileManager.CleanDirectoryPath(dir.Path)] = dir; }
++        }
++        if(coexist) {
++            Call(memory.GetType("Quest3TriggerUI.MorphTargetStringReuse",true),"Install");
++            Call(memory.GetType("Quest3TriggerUI.PackageJsonWeakRetention",true),"Install");
++        }
++        DAZMorphBank.DisableDirectoryCache(); DAZMorphBank.EnableDirectoryCache();
++        if (replay && feature.GetMethod("ConfigureImportReceipts") != null) {
++            Call(feature,"SetImportNativeAdapter",AccessTools.Method(typeof(CollectorProbe),"Native"));
++            Call(feature,"ConfigureImportReceipts",settings[1]);
++        } else if (feature.GetMethod("ConfigureMetadataDisk") != null) Call(feature, "ConfigureMetadataDisk", settings[1]);
++    }
++    static bool ControllerError(string __0) { LogError(__0); return false; }
++    static List<DAZMorph> List(DAZMorphBank bank, string field) { return (List<DAZMorph>)AccessTools.Field(typeof(DAZMorphBank), field).GetValue(bank); }
++    static string Digest(DAZMorphBank bank) {
++        using (var bytes = new MemoryStream()) using (var writer = new BinaryWriter(bytes, Encoding.UTF8)) {
++            object snapshot = Call(bank, "SaveMorphSnapshots");
++            foreach (object row in (IEnumerable)snapshot) {
++                var fields = row.GetType().GetFields(All); Array.Sort(fields, delegate(FieldInfo a, FieldInfo b) { return string.CompareOrdinal(a.Name, b.Name); });
++                foreach (FieldInfo field in fields) {
++                    object value = field.GetValue(row); writer.Write(field.Name);
++                    if (field.FieldType == typeof(DAZMorphFormula[])) { var formulas = (DAZMorphFormula[])value; writer.Write(formulas == null ? -1 : formulas.Length); if (formulas != null) foreach (var formula in formulas) { writer.Write((int)formula.targetType); writer.Write(formula.target ?? "<null>"); writer.Write(formula.multiplier); } }
++                    else if (value is float) writer.Write((float)value);
++                    else writer.Write(value == null ? "<null>" : value.ToString());
++                }
++            }
++            foreach (string field in new[] { "_morphs", "_unactivatedMorphs" }) { writer.Write(field); foreach (DAZMorph m in List(bank, field)) writer.Write(m.uid); }
++            foreach (string error in errors) writer.Write(error);
++            var badNames=(HashSet<string>)AccessTools.Field(typeof(DAZMorphBank),"badMorphNames").GetValue(bank);
++            if(badNames!=null){var bad=new List<string>(badNames);bad.Sort(StringComparer.Ordinal);foreach(string name in bad)writer.Write(name);}
++            writer.Flush(); using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(bytes.ToArray())).Replace("-", "");
++        }
++    }
++    public static string CoexistOffline(){coexist=true;return Offline();}
++    public static string CoexistReplay(){coexist=true;return RunMode(true);}
++    public static string CoexistExistingTree(){coexist=true;replayScenario=4;return RunMode(true);}
++    public static string CoexistMidHook(){coexist=true;replayScenario=2;return RunMode(true);}
++    public static string CoexistDynamic(){coexist=true;replayScenario=6;return RunMode(true);}
++    public static string Offline() {
++        try {
++            Setup(true);var entries=(Dictionary<string,VarFileEntry>)AccessTools.Field(typeof(FileManager),"uidToVarFileEntry").GetValue(null);
++            var list=new List<FileEntry>();foreach(var entry in entries.Values)list.Add(entry);
++            var watch=Stopwatch.StartNew();int count=(int)Call(feature,"BuildImportReceipts",folder,list);watch.Stop();
++            Console.WriteLine("OFFLINE_IMPORT_PASS rows="+count+" seconds="+watch.Elapsed.TotalSeconds.ToString("F3",CultureInfo.InvariantCulture)+" "+Call(feature,"ImportReceiptStats"));
++            return "OFFLINE_READY";
++        }catch(Exception error){Console.WriteLine("TOOL_EXCEPTION: "+error);return "OFFLINE_FAILED";}
++    }
++    public static string CrossCwdReplay(){replayScenario=5;return RunMode(true);}
++    public static string DynamicReplay(){replayScenario=6;return RunMode(true);}
++    public static string StreamHookReplay(){replayScenario=7;return RunMode(true);}
++    static void StreamForeign() {}
++    public static string Run() {return RunMode(false);}
++    public static string Replay() {return RunMode(true);}
++    public static string HookedReplay(){replayScenario=1;return RunMode(true);}
++    public static string MidHookReplay(){replayScenario=2;return RunMode(true);}
++    public static string MidCultureReplay(){replayScenario=3;return RunMode(true);}
++    public static string ExistingTreeReplay(){replayScenario=4;return RunMode(true);}
++    static string RunMode(bool replay) {
++        try {
++            Setup(replay);
++            if(replayScenario==1)InstallMetaHook();
++            if(replayScenario==4) {
++                var node=(JSONNode)Call(packages[0],"GetJSONCache",folder+"/valid.vmi");node["displayName"]="edited-json-tree";
++            }
++            if(replayScenario==5){string cwd=Path.GetFullPath("fixture_sources/alternate-cwd");Directory.CreateDirectory(cwd);Directory.SetCurrentDirectory(cwd);}
++            if(replayScenario==6)foreach(var package in packages){Set(package.Group,"customOptions",new Dictionary<string,bool>{{"preloadMorphs",true}});Property(package,"LicenseType","changed-license");Property(package,"Version",42);package.isNewestEnabledVersion=false;}
++            if(replayScenario==7){var type=memory.GetType("StartupPackageJson.JsonStreamParser",true);new Harmony("offline.stream.foreign").Patch(AccessTools.Method(type,"Parse"),prefix:new HarmonyMethod(typeof(CollectorProbe),"StreamForeign"));}
++            var bank = NewBank(); var timer = Stopwatch.StartNew(); bank.Init(); bank.RefreshPackageMorphs(); timer.Stop();
++            var counters = new MemoryCounters(); counters.Size = (uint)Marshal.SizeOf(typeof(MemoryCounters));
++            Require(GetProcessMemoryInfo(GetCurrentProcess(), ref counters, counters.Size), "process memory measurement failed");
++            var badNames = (HashSet<string>)AccessTools.Field(typeof(DAZMorphBank), "badMorphNames").GetValue(bank);
++            var bad = badNames == null ? new List<string>() : new List<string>(badNames); bad.Sort(StringComparer.Ordinal);
++            int formulas = 0;
++            foreach (var field in new[] { "_morphs", "_unactivatedMorphs" }) foreach (DAZMorph morph in List(bank, field)) {
++                Require(ReferenceEquals(morph.morphBank, bank), "morph references foreign bank"); Require(morph.morphSubBank != null, "original subbank association missing");
++                if (morph.formulas != null) formulas += morph.formulas.Length;
++                oldOwners.Add(new WeakReference(morph)); if (morph.formulas != null) foreach (var formula in morph.formulas) oldOwners.Add(new WeakReference(formula));
++            }
++            oldOwners.Add(new WeakReference(bank)); foreach (var sub in children[bank]) oldOwners.Add(new WeakReference(sub));
++            Console.WriteLine("FULL_IMPORT_RESULT version=" + memory.GetName().Version + " imports=" + imports + " active=" + List(bank, "_morphs").Count + " unactivated=" + List(bank, "_unactivatedMorphs").Count + " formulas=" + formulas + " regions=" + children[bank].Count + " bad=" + string.Join(",", bad.ToArray()) + " errors=" + errors.Count + " initRefreshMs=" + timer.Elapsed.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture) + " privateBytesBeforeDigest=" + counters.PrivateUsage.ToUInt64() + " peakWorkingSetBeforeDigest=" + counters.PeakWorkingSet.ToUInt64() + " digest=" + Digest(bank));
++            if (feature.GetMethod("MetadataDiskStats") != null) Console.WriteLine("FULL_IMPORT_DISK " + Call(feature, "MetadataDiskStats"));
++            if (feature.GetMethod("ImportReceiptStats") != null) Console.WriteLine("FULL_IMPORT_REPLAY " + Call(feature,"ImportReceiptStats"));
++            Type stream=memory.GetType("PackageStreamRuntime",true);
++            Console.WriteLine("FULL_IMPORT_JSON streamed="+stream.GetField("Streamed").GetValue(null)+" fallback="+stream.GetField("Fallback").GetValue(null));
++            return "FULL_IMPORT_PASS managedImportOriginal=True filterOriginal=True subbankOriginal=True rebuildOriginal=True";
++        } catch (Exception error) { Console.WriteLine("FULL_IMPORT_FAIL " + error); return "FAIL"; }
++    }
++    public static string Drop() {
++        DAZMorphBank.DisableDirectoryCache(); names.Clear(); links.Clear(); children.Clear();
++        foreach (var zip in archives) zip.Close(); archives.Clear(); packages.Clear();
++        foreach (string name in new[] { "uidToVarFileEntry", "pathToVarFileEntry", "uidToVarDirectoryEntry", "pathToVarDirectoryEntry", "allVarDirectoryEntries" }) Set(typeof(FileManager), name, null);
++        return "FULL_IMPORT_DROP";
++    }
++    public static string Weak() { int alive = 0; foreach (var weak in oldOwners) if (weak.IsAlive) alive++; Require(alive == 0, "old bank/subbank/morph/formula retained: " + alive); return "FULL_IMPORT_WEAK owners=0"; }
++    public static string Dump() {
++        foreach(MethodInfo method in typeof(DirectoryEntry).GetMethods(All)) Console.WriteLine("DIRECTORY_API "+method);
++        foreach(var method in typeof(DAZMorphBank).GetMethods(All)) if(method.Name=="RuntimeImportFromDir")Print(method);
++        foreach(Type type in typeof(Harmony).Assembly.GetTypes()) if(type.Name.Contains("SharedState") || type.Name=="GlobalPatchState" || type.Name=="PatchInfo") {
++            Console.WriteLine("TYPE " + type);
++            foreach(FieldInfo field in type.GetFields(All)) Console.WriteLine("FIELD " + field.FieldType + " " + field.Name);
++            foreach(MethodInfo method in type.GetMethods(All|BindingFlags.DeclaredOnly)) Print(method);
++        }
++        Print(AccessTools.Method(typeof(DAZMorph), "LoadMetaFromJSON"));
++        foreach (Type type in new[] { typeof(DAZMorphSubBank), typeof(VarPackage), typeof(VarDirectoryEntry), typeof(SystemDirectoryEntry) }) {
++            Console.WriteLine("TYPE " + type);
++            foreach (FieldInfo field in type.GetFields(All)) Console.WriteLine("FIELD " + field.FieldType + " " + field.Name);
++            foreach (ConstructorInfo method in type.GetConstructors(All)) Print(method);
++        }
++        foreach (string name in new[] { "AddMorph", "CompleteRuntimeMorphAdd", "CompletePackageMorphAdd", "CompleteTransientMorphAdd", "get_combinedMorphs", "RebuildMorphsByNameAndUid" }) Print(AccessTools.Method(typeof(DAZMorphSubBank), name));
++        foreach (string name in new[] { "GetJSONCache", "get_LicenseType", "get_Version", "get_IsSimulated" }) Print(AccessTools.Method(typeof(VarPackage), name));
++        foreach (string name in new[] { "GetDirectoryEntry", "GetFileEntry", "FindVarDirectories", "GetVarFileEntry", "GetVarDirectoryEntry", "GetSystemFileEntry", "GetSystemDirectoryEntry", "FileExists" }) Print(AccessTools.Method(typeof(FileManager), name));
++        foreach (string name in new[] { "BuildMorphSubBanksByRegion", "BuildMorphsList", "BuildMorphsByNameAndUid", "InitMorphs", "RefreshRuntimeMorphs", "RefreshPackageMorphs", "WarmupDirectoryCache", "GetVmiJsonCached" }) Print(AccessTools.Method(typeof(DAZMorphBank), name));
++        return "FULL_IMPORT_DUMP_PASS";
++    }
++    static void Print(MethodBase method) {
++        if (method == null) { Console.WriteLine("METHOD_MISSING"); return; }
++        Console.WriteLine("METHOD " + method.DeclaringType + "::" + method);
++        if (method.GetMethodBody() == null) return;
++        foreach (CodeInstruction code in PatchProcessor.GetOriginalInstructions(method)) Console.WriteLine(code);
++    }
++}
+--- /dev/null
++++ b/src/OfflineSmallBuilder.cs
+@@ -0,0 +1,89 @@
++using System;
++using System.Collections.Generic;
++using System.Diagnostics;
++using System.IO;
++using System.Reflection;
++using System.Runtime.Serialization;
++using HarmonyLib;
++using MVR.FileManagement;
++using ICSharpCode.SharpZipLib.Zip;
++using VaM.Memory;
++
++// Isolated build-time worker. It does not load UnityPlayer or install a game plugin.
++public static class CollectorProbe {
++    private const BindingFlags All=BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Instance|BindingFlags.Static;
++    private static void Set(object target,string name,object value){target.GetType().GetProperty(name,All).SetValue(target,value,null);}
++    public static string Run() {try{return Build(true);}catch(Exception e){Console.WriteLine("TOOL_EXCEPTION: "+e);return "OFFLINE_FAILED";}}
++    public static string Baseline() {return Build(false);}
++    public static string Resident(){keepResident=true;try{return Build(true);}finally{keepResident=false;}}
++    private static bool keepResident;
++    private static string Build(bool disk) {
++        string here=Path.GetDirectoryName(typeof(CollectorProbe).Assembly.Location);
++        string[] settings=File.ReadAllLines(Path.Combine(here,"offline-settings.txt"));
++        string output=settings[0],assemblyPath=settings[1],methodName=settings[2],expected=settings[3];
++        int budget=int.Parse(settings[4]),limit=int.Parse(settings[5]),regionCount=int.Parse(settings[6]);
++        var regions=new List<HashSet<int>>();
++        for(int i=0;i<regionCount;i++){var set=new HashSet<int>();foreach(string v in settings[7+i].Split(','))set.Add(int.Parse(v));if(set.Count>8192)throw new InvalidDataException("region bound");regions.Add(set);}
++        var assembly=Assembly.Load(File.ReadAllBytes(assemblyPath));
++        Type type=assembly.GetType("NAT.Common.MorphListener",true);MethodInfo method=type.GetMethod(methodName,All);
++        Type audit=typeof(MorphClassificationMemo).Assembly.GetType("Quest3TriggerUI.MorphFilterMethodAudit",true);
++        string actual=(string)audit.GetMethod("Fingerprint",All).Invoke(null,new object[]{method});
++        if(actual!=expected)throw new InvalidDataException("offline classifier fingerprint changed: "+actual);
++        ZipConstants.DefaultCodePage=0;ZipEntryLookup.Install();MorphClassificationMemo.Install();
++        if(disk){ClassificationDiskReceipts.DisableDiskPruning();ClassificationDiskReceipts.SetDiskLimits(budget,limit);ClassificationDiskReceipts.Configure(output);}
++        var entries=new Dictionary<string,VarFileEntry>();typeof(FileManager).GetField("uidToVarFileEntry",All).SetValue(null,entries);
++        int packages=0,errors=0,peakTables=0;long calls=0,totalHits=0,totalRecorded=0,positives=0,vertices=0,peakMemory=0;
++        try {
++            for(int p=7+regionCount;p<settings.Length;p++) {
++                string path=settings[p];if(!path.EndsWith(".var",StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("archive path");
++                long beforeHits=ClassificationDiskReceipts.Hits,beforeRecorded=ClassificationDiskReceipts.Recorded;var watch=Stopwatch.StartNew();
++                try {
++                    var info=new FileInfo(path);if(!info.Exists)throw new FileNotFoundException("archive vanished",path);
++                    using(var zip=new ZipFile(File.OpenRead(path))) {
++                        string uid=Path.GetFileNameWithoutExtension(path);
++                        var package=(VarPackage)FormatterServices.GetUninitializedObject(typeof(VarPackage));
++                        Set(package,"Uid",uid);Set(package,"Path",path.Replace('/','\\'));Set(package,"FullPath",Path.GetFullPath(path));
++                        Set(package,"Size",info.Length);Set(package,"LastWriteTime",info.LastWriteTime);
++                        Set(package,"CachedUidColonSlash",uid+":/");Set(package,"CachedPathColonBackslash",path.Replace('/','\\')+":\\");
++                        Set(package,"CachedFullPathColonBackslash",Path.GetFullPath(path)+":\\");Set(package,"CachedAddonPrefsPfx","AddonPackagesFilePrefs/"+uid+"/");
++                        typeof(VarPackage).GetField("_zipFile",All).SetValue(package,zip);
++                        var ambiguous=new HashSet<string>(StringComparer.OrdinalIgnoreCase);var names=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
++                        foreach(ZipEntry z in zip)if(z.Name.EndsWith(".vmb",StringComparison.OrdinalIgnoreCase) && !names.Add(z.Name))ambiguous.Add(z.Name);
++                        foreach(ZipEntry z in zip) {
++                            if(ambiguous.Contains(z.Name)){Console.WriteLine("OFFLINE_AMBIGUOUS name="+z.Name);continue;}
++                            if(!z.Name.EndsWith(".vmb",StringComparison.OrdinalIgnoreCase)||z.Size<4||z.Size>int.MaxValue||(z.Flags&1)!=0)continue;
++                            var entry=new VarFileEntry(package,z.Name,z.DateTime,z.Size,false);
++                            if(entry.InternalPath!=z.Name.Replace('/','\\')||entry.InternalSlashPath!=z.Name)throw new InvalidDataException("entry constructor mapping");
++                            entries[FileManager.CleanFilePath(entry.Uid)]=entry;
++                        }
++                        foreach(var region in regions) {
++                            object listener=FormatterServices.GetUninitializedObject(type);type.GetField("_vertexIndices",All).SetValue(listener,region);
++                            foreach(string key in entries.Keys){
++                                long h=ClassificationDiskReceipts.Hits,r=ClassificationDiskReceipts.Recorded,rejected=ClassificationDiskReceipts.Rejected;
++                                if((bool)method.Invoke(listener,new object[]{key}))positives++;calls++;
++                                if(disk && ClassificationDiskReceipts.Hits==h && ClassificationDiskReceipts.Recorded==r) {
++                                    var selected=zip.GetEntry(entries[key].InternalSlashPath);
++                                    int matchingNames=0;foreach(ZipEntry item in zip)if(item.Name==entries[key].InternalSlashPath)matchingNames++;
++                                    Console.WriteLine("OFFLINE_UNCACHED key="+key+" lookupSame="+Object.ReferenceEquals(FileManager.GetFileEntry(key,true),entries[key])+" rejectedDelta="+(ClassificationDiskReceipts.Rejected-rejected)+" entrySize="+entries[key].Size+" selectedSize="+(selected==null?-1:selected.Size)+" dateMatches="+(selected!=null && selected.DateTime.Ticks==entries[key].LastWriteTime.Ticks)+" decodedNameMatches="+matchingNames);
++                                }
++                            }
++                            if((long)type.GetField("_classificationFiles",All).GetValue(listener)!=entries.Count)throw new InvalidDataException("classifier counter");
++                            vertices+=(long)type.GetField("_classificationVertices",All).GetValue(listener);
++                        }
++                    }
++                    ClassificationDiskReceipts.Flush();
++                    long hits=ClassificationDiskReceipts.Hits-beforeHits,recorded=ClassificationDiskReceipts.Recorded-beforeRecorded;
++                    totalHits+=hits;totalRecorded+=recorded;packages++;
++                    Console.WriteLine("OFFLINE_PACKAGE index="+(p-7-regionCount)+" files="+entries.Count+" hits="+hits+" recorded="+recorded+" ms="+watch.ElapsedMilliseconds);
++                } catch(Exception error) {errors++;Console.WriteLine("OFFLINE_ERROR index="+(p-7-regionCount)+" error="+error);}
++                finally {
++                    peakMemory=Math.Max(peakMemory,ClassificationDiskReceipts.ReservedBytes);
++                    int tables=((System.Collections.IDictionary)typeof(ClassificationDiskReceipts).GetField("Tables",All).GetValue(null)).Count;
++                    peakTables=Math.Max(peakTables,tables);
++                    entries.Clear();MorphClassificationMemo.Clear();if(!keepResident)ClassificationDiskReceipts.ResetMemory();
++                }
++            }
++        } finally {entries.Clear();ClassificationDiskReceipts.Disable();MorphClassificationMemo.Stop();ZipEntryLookup.Stop();}
++        return "OFFLINE_BUILD_RESULT packages="+packages+" errors="+errors+" calls="+calls+" hits="+totalHits+" recorded="+totalRecorded+" positives="+positives+" vertices="+vertices+" evicted="+ClassificationDiskReceipts.Evicted+" residentPeak="+peakTables+" memoryPeak="+peakMemory+" actualEntryConstructor=True productionDllWrites=0 gameOperations=0";
++    }
++}
+--- /dev/null
++++ b/src/PortableOffline.cs
+@@ -0,0 +1,107 @@
++using System;
++using System.Collections.Generic;
++using System.IO;
++using System.Reflection;
++using System.Runtime.Serialization;
++using System.Text;
++using HarmonyLib;
++using ICSharpCode.SharpZipLib.Zip;
++using MVR.FileManagement;
++using SimpleJSON;
++
++// Invoked by an isolated Mono process, not the Unity game process.
++public static partial class CollectorProbe {
++    public static string InitializePortable() {
++        memory = Assembly.LoadFrom("VaM.Memory.dll");
++        string game = File.ReadAllLines("portable-settings.txt")[0];
++        memory.GetType("VaM.Memory.MemoryCachePaths",true).GetMethod("Initialize").Invoke(null,new object[]{game});
++        memory.GetType("VaM.Memory.DelegateGraphLifetime",true).GetMethod("Install").Invoke(null,null);
++        return "PORTABLE_INIT_PASS";
++    }
++
++    public static string SourceCaches() {
++        string[] lines=File.ReadAllLines("source-settings.txt");
++        string output=lines[0]; Directory.CreateDirectory(output); int built=0, rejected=0;
++        ZipConstants.DefaultCodePage=0;
++        for(int i=1;i<lines.Length;i++) {
++            try {
++                string path=lines[i]; var info=new FileInfo(path);
++                var package=(VarPackage)FormatterServices.GetUninitializedObject(typeof(VarPackage));
++                string uid=Path.GetFileNameWithoutExtension(path);
++                foreach(string name in new[]{"Uid","Path","FullPath","SlashPath","FullSlashPath"})
++                    Property(package,name,name=="Uid"?uid:info.FullName);
++                Property(package,"Size",info.Length); Property(package,"LastWriteTime",info.LastWriteTime);
++                Property(package,"CachedUidColonSlash",uid+":/");
++                Property(package,"CachedUidColon",uid+":");
++                Property(package,"CachedPathColon",info.FullName+":");
++                Property(package,"CachedFullPathColon",info.FullName+":");
++                Property(package,"CachedPathColonBackslash",info.FullName+":\\");
++                Property(package,"CachedFullPathColonBackslash",info.FullName+":\\");
++                Property(package,"CachedAddonPrefsPfx","AddonPackagesFilePrefs/"+uid+"/");
++                using(var zip=new ZipFile(File.OpenRead(path))) {
++                    Set(package,"_zipFile",zip);
++                    var dirs=new Dictionary<string,VarDirectoryEntry>();
++                    var root=new VarDirectoryEntry(package,"",null); dirs.Add("",root);
++                    var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
++                    int vmb=0;
++                    foreach(ZipEntry z in zip) {
++                        if(!z.IsDirectory && z.Name.EndsWith(".vmb",StringComparison.OrdinalIgnoreCase))vmb++;
++                        if(z.IsDirectory || !(z.Name.EndsWith(".vmi",StringComparison.OrdinalIgnoreCase)||z.Name.EndsWith(".vam",StringComparison.OrdinalIgnoreCase))) continue;
++                        if(!seen.Add(z.Name))throw new InvalidDataException("ambiguous JSON entry");
++                        if(z.Name.IndexOf('\r')>=0||z.Name.IndexOf('\n')>=0||z.Name.IndexOf('|')>=0)throw new InvalidDataException("entry separator");
++                        string[] segments=z.Name.Split('/'); string parent="";
++                        for(int n=0;n<segments.Length-1;n++) {
++                            string next=parent.Length==0?segments[n]:parent+"/"+segments[n];
++                            if(!dirs.ContainsKey(next)) {
++                                var child=new VarDirectoryEntry(package,next,dirs[parent]);
++                                ((HashSet<VarDirectoryEntry>)AccessTools.Field(typeof(VarDirectoryEntry),"varSubDirectories").GetValue(dirs[parent])).Add(child);
++                                dirs.Add(next,child);
++                            }
++                            parent=next;
++                        }
++                        var entry=new VarFileEntry(package,z.Name,z.DateTime,z.Size,false);
++                        ((List<VarFileEntry>)AccessTools.Field(typeof(VarDirectoryEntry),"varFileEntries").GetValue(dirs[parent])).Add(entry);
++                    }
++                    var cache=new JSONClass();
++                    // Exactly the two patterns used by this game's original constructor.
++                    Call(package,"AddDirToCache",root,"*.vmi",cache);
++                    Call(package,"AddDirToCache",root,"*.vam",cache);
++                    string target=Path.Combine(output,uid+".vamcachejson");
++                    File.WriteAllText(target,cache.ToString(""),new UTF8Encoding(false));
++                    var meta=new JSONClass();meta["type"]="json";meta["size"]=info.Length.ToString();meta["date"]=info.LastWriteTime.ToString();
++                    File.WriteAllText(Path.Combine(output,uid+".vamcachemeta"),meta.ToString(""),new UTF8Encoding(false));
++                    Console.WriteLine("SOURCE_CACHE_BUILT "+uid);built++;
++                    if(vmb>0)Console.WriteLine("CLASSIFICATION_PACKAGE "+uid);
++                }
++            } catch(Exception e) { rejected++;Console.WriteLine("SOURCE_CACHE_REJECTED "+lines[i]+"|"+e); }
++        }
++        return "SOURCE_CACHE_PASS built="+built+" rejected="+rejected;
++    }
++
++    public static string PortableTrees() {
++        string[] lines=File.ReadAllLines("tree-settings.txt");
++        Type disk=memory.GetType("VaM.Memory.PackageTreeDisk",true);
++        Call(disk,"Configure",lines[0]);int built=0,rejected=0;
++        for(int i=1;i<lines.Length;i++) {
++            try { Console.WriteLine("TREE_BUILT "+(string)Call(disk,"Build",lines[i]));built++; }
++            catch(Exception e) {Console.WriteLine("TREE_REJECTED "+lines[i]+"|"+e.GetType().FullName);rejected++;}
++        }
++        return "TREE_BUILD_PASS built="+built+" rejected="+rejected;
++    }
++
++    public static string VerifyTrees() {
++        string[] lines=File.ReadAllLines("tree-settings.txt");
++        Type disk=memory.GetType("VaM.Memory.PackageTreeDisk",true);Call(disk,"Configure",lines[0]);int count=0;
++        for(int i=1;i<lines.Length;i++) {
++            using(var owner=new SystemFileEntryStreamReader(new SystemFileEntry(lines[i]))) {
++                object[] args=new object[]{lines[i],owner,null};
++                bool hit=(bool)disk.GetMethod("TryRead").Invoke(null,args);
++                if(!hit || args[2]==null)throw new InvalidDataException("generated tree did not replay");
++                var expected=JSON.Parse(File.ReadAllText(lines[i]));
++                if(((JSONNode)args[2]).ToString("")!=expected.ToString(""))throw new InvalidDataException("tree result changed");
++                count++;
++            }
++        }
++        return "TREE_REPLAY_PASS count="+count+" "+Call(disk,"Stats");
++    }
++}
+--- /dev/null
++++ b/src/ProfileCompile.cs
+@@ -0,0 +1,28 @@
++using System;
++using System.CodeDom.Compiler;
++using System.IO;
++using System.Reflection;
++public static class CollectorProbe {
++ public static string Compile() {
++  try {
++   string[] settings=File.ReadAllLines("compile-settings.txt");
++   string output=settings[0],managed=settings[1];
++   var assembly=Assembly.LoadFrom(Path.Combine(managed,"Assembly-CSharp.dll"));
++   Type type=assembly.GetType("DynamicCSharp.Compiler.McsCompiler",true);
++   type.GetProperty("OutputDirectory",BindingFlags.Static|BindingFlags.NonPublic).SetValue(null,output,null);
++   for(int i=0;i<2;i++) {
++    var compiler=(ICodeCompiler)Activator.CreateInstance(type,true);
++    var options=new CompilerParameters();options.GenerateInMemory=false;options.GenerateExecutable=false;
++    options.OutputAssembly="Classifier"+i;options.WarningLevel=4;
++    foreach(string file in Directory.GetFiles(managed,"*.dll")) {
++     string n=Path.GetFileName(file);
++     if(n=="mscorlib.dll"||n=="System.dll"||n=="System.Core.dll"||n=="Assembly-CSharp.dll"||n.StartsWith("UnityEngine",StringComparison.Ordinal))options.ReferencedAssemblies.Add(file);
++    }
++    var result=compiler.CompileAssemblyFromFileBatch(options,new[]{settings[2+i]});
++    foreach(CompilerError e in result.Errors)if(!e.IsWarning)throw new InvalidDataException(e.ToString());
++    Console.WriteLine("PROFILE_COMPILED "+i+" "+result.PathToAssembly);
++   }
++   return "PROFILE_COMPILE_PASS";
++  } catch(Exception e){Console.WriteLine("TOOL_EXCEPTION: "+e);return "PROFILE_COMPILE_FAILED";}
++ }
++}
+--- /dev/null
++++ b/repository/README.md
+@@ -0,0 +1,108 @@
++# VaM 加载优化补丁
++
++统一打包已部署的 **VaM.Memory 1.8.26 + Quest3TriggerUI 4.6.302** 场景与人物加载加速工作，提供 Windows x64 离线安装器、建表工具、BC7 转换和备份还原。
++
++## 下载与使用
++
++从 [Releases](https://github.com/nekokoshark/VaM-Load-Acceleration/releases) 下载 `VaM_Load_Acceleration_1.8.26.zip`。GitHub 的自动 Source code ZIP 是源码，不是安装包。
++
++1. 正常退出 VaM。
++2. 把安装包**里面的文件**解压到 VaM 根目录。`Install_VaM_Acceleration.bat` 与 `VaM.exe` 应当在同一层。
++3. 可先双击 `Check_VaM_Acceleration.bat`：检查兼容性，不写游戏或缓存。
++4. 双击 `Install_VaM_Acceleration.bat`，等到 `INSTALL_PASS` 与 `Exit status: 0`。
++5. 使用自己的原启动 BAT 启动 VaM。安装器不启动、关闭或操作游戏，不改 VR 启动链。
++
++安装器自带 Python，不需要安装系统 Python，不需要联网。需要 Windows x64 及系统 .NET Framework 4.x。首次全库预建和 BC7 编码可能较久；再次执行用于补齐更新后的包库。
++
++命令行只建表、不做本轮 BC7 扫描：
++
++```bat
++Install_VaM_Acceleration.bat --no-bc7
++```
++
++`--no-bc7` 只跳过离线转换；运行插件原有的按需转换开关仍由 `VaM.Memory.cfg` 控制。
++
++## 兼容范围
++
++- 目标游戏：**VaM 1.22.0.12**。核心、Mono、Skin DLL 使用 SHA-256 白名单差分重建；仅版本号相同不代表兼容。
++- 需要已有匹配的 **v13beta1 系列 Skin 性能补丁原件**。包内有我们的 Skin 改动差分，而没有第三方完整原件。已有相同最终版本也可直接使用。
++- 支持的原始／中间核心、Mono、Skin 哈希全部列在 [`components.json`](package/VaMAcceleration/components.json)。未知原件在任何安装写入之前退出，输出 `UNSUPPORTED_BASE`。
++- 已有 BepInEx／Doorstop 需要与包内引导依赖兼容；不强行替换不同的引导器。重复的旧 Q3 普通载荷会被拒绝。
++- Quest3TriggerUI 的载荷文件必须保留 `.payload.dll.disabled` 后缀，由配套 HotLoader 加载。不要另放一个普通 `.payload.dll`。
++- 兼容性检查通过不等于实机画面、物理及插件组合已验收。请在自己的常用场景核对。
++
++## 包里不只是缓存工具
++
++| 方向 | 已包含的改动 |
++|---|---|
++| 场景 UI / BrowserAssist | 加载期 UI 重同步合并、包库扫描增量、VAR 名称／条目索引、块流读取 |
++| 人物预设 | **QuestTriggerUI 人物／外观／服装预设加速也包含在内**：差量应用、实例与准备结果复用、头发渲染批处理、重复清扫合并和有边界的 GC/UUA 调度 |
++| 形变建库 | 公共纯元数据会话复用、男女全库导入收据、原导入／过滤／激活链保留、小形变流式分类、跨人物内存收据与磁盘分类表、首次标量索引 |
++| JSON 与文件查询 | 场景及包 JSON 流式解析、原生包 JSON sidecar、经完整源哈希检查的二进制 JSON 树、不可变字符串／描述表、路径规范化、目录选择和负查询复用 |
++| 资产创建 | 非活跃 Anatomy 分支、条目元数据与文件查询热路径、准备资源所有权转交、不可变委托图共享、避免克隆历史被订阅根长期保留 |
++| Bundle / 依赖 | 外部 worker 的 Bundle 缓存准备、加载窗口预算与预加载租约、取消／失败依赖的释放、BOM 协议修复；资产真正的 Unity 创建和依赖完成条件不被假跳过 |
++| 插件编译 | 原 Mono 外部编译 worker、字节码模板缓存；各插件实例及程序集静态状态仍隔离 |
++| 贴图 | 缓存流读写、上传与解码复用、并行请求合并、内存准入与写盘预算、暂存生命周期、合格色图 BC7 转换和读取兼容性 |
++| 配套运行时 | 已部署的 Mono 分配／释放改动及 Skin 访问／准备链改动，以差分形式安装；相关资源退出与加载收尾合并逻辑仍在统一 DLL 中 |
++| 可选 Naturalis 源码补丁 | 对 15/43/44/51/53/54/55/70/72/73/92/93 已核验源版本，按精确源哈希只替换目标源码条目；没有安装相应版本就跳过，未识别源码不改 |
++
++Naturalis 补丁不包含原 VAR 或第三方资源。重建 VAR 时保留其他条目的内容、名称、元信息和顺序；原件先备份。ZIP 的压缩字节可因重建发生变化，不以整个 VAR 字节相等作为未改资源的判据。
++
++**不包含**未部署的 1.8.27 微候选、实验性插件 UI 重写、跳过必需依赖、减少人物／服装／物理或偷偷降画质。BC7 本身是有损编码，不是像素无损转换。
++
++## 缓存目录和更新
++
++从目标根目录的 `prefs.json` 读取 `cacheFolder`。绝对路径直接使用，相对路径相对于该 VaM 根目录；缺省为 `Cache`。不把作者本机的 `D:\vamcache` 写死进安装器。
++
++例如用户自己的配置是 `D:\vamcache`，则输出：
++
++```text
++D:\vamcache\PackageJSON\                 # VaM 原生包 VMI/VAM JSON sidecar
++D:\vamcache\VaMMemory\MorphImports\      # 男女纯元数据导入表
++D:\vamcache\VaMMemory\ClassificationReceipts\
++D:\vamcache\VaMMemory\PackageTrees\      # 原生包 JSON 的二进制树
++D:\vamcache\VaMMemory\StartupMorphIndex\
++D:\vamcache\VaMMemory\BundleDiskCache\
++D:\vamcache\VaMMemory\CompilerBytecode\
++```
++
++前四类可由 BAT 在目标机器预建。其余按首次实际请求生成；不是提前启动所有场景或创建所有 Unity 对象。Bundle、编译结果、贴图与本地散装资源的按需路径仍在运行组件中；未覆盖／被拒绝的离线输入继续走原加载路径。
++
++包库递归扫描支持链接目录并检测环，重名 UID 不猜选其中一个。形变表记录目标路径、源版本／时间戳、文化设置及程序集 MVID；JSON 树校验完整源内容和载荷。变化的来源使对应收据失效，重新加载／重跑 BAT 更新。**没有宣称文件一变就全库实时重建**。
++
++不会按容量自动清理这些子缓存，也不会扫描并删除用户原生贴图。新场景、人物、服装只在实际访问了相应数据后生成其适用缓存；某项没有可复用数据时不会凭空生成完整场景快照。
++
++## BC7 的资格与备份
++
++只扫描原生 `*_C.vamcache` 色图：RGB24 或所有 mip 均不透明的 RGBA32，支持的完整／单级 mip 链，256 KiB–256 MiB，尺寸 1–16384。normal、bump、mask、线性用途和透明色图不走这条转换路径。非 POT 尺寸按兼容工具规划；不能节省实际字节就保留原生格式。
++
++每项均经过源检查、编码、解码后不透明检查、长度验证；**原数据和元数据成对备份，带持久事务记录，再提交**。有损压缩可能改变颜色细节。新色图运行时继续按已有请求条件处理；重新执行安装 BAT 也可转换之后生成的合格原生缓存。
++
++## 还原
++
++正常退出 VaM，然后双击：
++
++```bat
++Restore_VaM_Acceleration.bat
++```
++
++每次安装的原文件、SHA-256、mtime、提交状态和 worker 日志放在 `VaMAcceleration\backups\日期-进程号\`。还原最新未还原事务，可重复执行逐层撤销之前的安装。首次安装能还原核心／运行组件、配置、改过的 VAR 和 BC7 原始数据／元数据；新建的事务缓存文件也会撤销。
++
++失败自动回滚；被中断的事务可由同一个还原入口继续处理。工具每次提交／还原前检查 VaM 进程，不杀进程。之后若游戏或用户修改过同一个文件，会报 `RESTORE_CONFLICT`，保留后续修改，不静默覆盖。请保留 backups，尤其 BC7 的原贴图备份可能较大；此版本不自动删备份或缓存。
++
++## 测试与收益口径
++
++本次发布包在独立中文／空格路径副本通过：原始基线检查、完整安装与建表、真实 BC7 编码／解码、不透明／透明／normal 区分、Naturalis 精确源码条目修改、独立副本哈希还原、重复安装不改源时间戳、未知核心拒绝、worker 故障的事务回滚。建出的表另外由冻结 DLL 的原入口回放。
++
++既往本机 Westo 手估时长存在约 170→115 秒的趋势，但不是每项优化的严格独立贡献。最终内部阶段记录约创建 44.6 秒、延迟恢复 22.3 秒；内部 `LoadPerf` 不等于用户可操作全程。**本发布是已有部署的统一分发，不承诺任意包库稳定再省固定 10/20 秒**。实机组合与更多设备仍需验证。
++
++## 开发与来源
++
++- `package/`：与 Release ZIP 对应的可安装文件。
++- `src/memory/`：冻结 Memory 编译输入与嵌入资源；`build.json` 不使用本机绝对路径。
++- `src/offline/`、`src/bc7/`、`src/native/`：便携建表、兼容检查和独立 Mono host 源码。
++- `tools/`：定向回归、构建和打包工具。
++- [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)：第三方组件、来源与随包许可证。
++- 完整 QuestTriggerUI 工程见 [Quest3TriggerUI 仓库](https://github.com/nekokoshark/Quest3TriggerUI)；本包冻结的是上文哈希所对应的载荷，不自动追随其后续版本。
++
++重编译运行 DLL 会改变 MVID，原机器生成的形变表不能当作新 DLL 的有效表。重新建表再验证，不用旧表证明新构建兼容。
+--- /dev/null
++++ b/repository/THIRD_PARTY_NOTICES.md
+@@ -0,0 +1,25 @@
++# 组件与来源
++
++本工程不是 VaM 或第三方作者的官方发行。补丁不包含 VaM.exe、UnityPlayer、完整游戏 Managed 库、人物、场景、服装、VAR 原包、用户配置或原生贴图库。
++
++| 组件 | 来源／说明 |
++|---|---|
++| VaM 核心与 Mono／Skin | 由用户本机的已识别原件应用差分重建。原版权保持；不包含其完整原 DLL。Mono 历史源码见 [mono/mono](https://github.com/mono/mono)，Unity 分支见 [Unity-Technologies/mono](https://github.com/Unity-Technologies/mono)。 |
++| Skin 性能原件 | turtlebackgoofy / Evo 的 VaM 1.22.0.12 v13beta1 系列性能补丁；此包只提供我们的修改差分，保留目标现有 INI。 |
++| VaMLeanCore | 原工作集基于 VaMLeanCore 的现有核心；差分针对 components.json 中的明确原件，不分发完整核心或其原插件包。 |
++| Quest3TriggerUI | [nekokoshark/Quest3TriggerUI](https://github.com/nekokoshark/Quest3TriggerUI)，4.6.302 冻结载荷、HotLoader；Memory 已统一实现的模块没有再单独打成第二个插件。 |
++| Naturalis | everlaster；只分发经过回归的具体源码改动差分和最小分类算法工具，不附原插件资源。用户自己的匹配原件才会修改。 |
++| BepInEx | [BepInEx/BepInEx](https://github.com/BepInEx/BepInEx)，MIT；见 licenses/BepInEx.txt。 |
++| HarmonyX、兼容桥 | [BepInEx/HarmonyX](https://github.com/BepInEx/HarmonyX)；见 licenses/HarmonyX.txt。引导文件保持与测试环境相同的组合。 |
++| MonoMod | [MonoMod/MonoMod](https://github.com/MonoMod/MonoMod)；见 licenses/MonoMod.txt。 |
++| Mono.Cecil | [jbevain/cecil](https://github.com/jbevain/cecil)；见 licenses/MonoCecil.txt。 |
++| UnityDoorstop | [NeighTools/UnityDoorstop](https://github.com/NeighTools/UnityDoorstop)；见 licenses/UnityDoorstop.txt。 |
++| texconv | [microsoft/DirectXTex](https://github.com/microsoft/DirectXTex)，MIT；见 licenses/DirectXTex.txt。 |
++| Python 3.12 嵌入版 | [python.org](https://www.python.org/)，含原 LICENSE.txt 与 Windows 嵌入发行的运行组件。运行依赖保持原许可证。 |
++| python-lz4 / LZ4 | [python-lz4/python-lz4](https://github.com/python-lz4/python-lz4)；许可证见 licenses/LZ4.txt。随 Memory 支持资源使用。 |
++
++`licenses/Mono.txt` 是 Mono 上游各目录许可证索引；差分没有把上游全文源库作为我们的原创发布。游戏内 SharpZipLib／Unity／DynamicCSharp 引用由目标 VaM 提供，未打包。
++
++原项目、上游作者与本工程新增的安装／建表工具分别保留自己的著作权。没有把整个补丁包或第三方改动重新声明为同一个原创许可证。
++
++Python 的原生 OpenSSL、libffi 及 LZ4 库分别保留 `licenses/OpenSSL.txt`、`licenses/Libffi.txt`、`licenses/LZ4-native.txt` 中的上游许可证。

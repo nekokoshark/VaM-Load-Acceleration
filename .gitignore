@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.zip
+*.log
+.build/
+package/VaMAcceleration/backups/

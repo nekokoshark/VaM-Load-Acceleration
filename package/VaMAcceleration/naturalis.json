@@ -1,0 +1,100 @@
+{
+  "versions": [
+    {
+      "name": "everlaster.Naturalis.15.var",
+      "entry": "Custom/Scripts/everlaster/Naturalis/src/Common/MorphListener.cs",
+      "base": "138027197380982ae249a7e59283ce896a5dd2e95e8b965817bf771ec33aa5b9",
+      "target": "300615c6bb7c5b0335a946b7e9aa76261d93b3139e45273d3d5aeae0a2a8d83b",
+      "length": 6222,
+      "patch": "patches/nat15.xorz"
+    },
+    {
+      "name": "everlaster.Naturalis.43.var",
+      "entry": "Custom/Scripts/everlaster/Naturalis/src/Common/MorphListener.cs",
+      "base": "12494c570bfd77fdacf9f0bcdf61cc2498ed54635545da0b09f0821a62413387",
+      "target": "b175cce96de13a55c0fb8ff6fc7464ddffb53f00b3619e17ae54326505170224",
+      "length": 6493,
+      "patch": "patches/nat43.xorz"
+    },
+    {
+      "name": "everlaster.Naturalis.44.var",
+      "entry": "Custom/Scripts/everlaster/Naturalis/src/Common/MorphListener.cs",
+      "base": "12494c570bfd77fdacf9f0bcdf61cc2498ed54635545da0b09f0821a62413387",
+      "target": "b175cce96de13a55c0fb8ff6fc7464ddffb53f00b3619e17ae54326505170224",
+      "length": 6493,
+      "patch": "patches/nat44.xorz"
+    },
+    {
+      "name": "everlaster.Naturalis.51.var",
+      "entry": "Custom/Scripts/everlaster/Naturalis/src/Common/MorphListener.cs",
+      "base": "4a7314758a936a450a5cea285b85cd6b4a86b840c119200415f423b61da1eaf2",
+      "target": "3598fd0016d24bc9e49cb6a2221494ff282b02f6679bae80ca9d654489e9bcc8",
+      "length": 6481,
+      "patch": "patches/nat51.xorz"
+    },
+    {
+      "name": "everlaster.Naturalis.53.var",
+      "entry": "Custom/Scripts/everlaster/Naturalis/src/Common/MorphListener.cs",
+      "base": "4a7314758a936a450a5cea285b85cd6b4a86b840c119200415f423b61da1eaf2",
+      "target": "3598fd0016d24bc9e49cb6a2221494ff282b02f6679bae80ca9d654489e9bcc8",
+      "length": 6481,
+      "patch": "patches/nat53.xorz"
+    },
+    {
+      "name": "everlaster.Naturalis.54.var",
+      "entry": "Custom/Scripts/everlaster/Naturalis/src/Common/MorphListener.cs",
+      "base": "4a7314758a936a450a5cea285b85cd6b4a86b840c119200415f423b61da1eaf2",
+      "target": "3598fd0016d24bc9e49cb6a2221494ff282b02f6679bae80ca9d654489e9bcc8",
+      "length": 6481,
+      "patch": "patches/nat54.xorz"
+    },
+    {
+      "name": "everlaster.Naturalis.55.var",
+      "entry": "Custom/Scripts/everlaster/Naturalis/src/Common/MorphListener.cs",
+      "base": "d06dd437379775e796c6c1f51b124eeb7cdbbb5781e6afc03808d84efbd20c7c",
+      "target": "82f08a55ab8f938959475cd52c40484e1c2d5e4346679bfcb276dd3fb7eff410",
+      "length": 14382,
+      "patch": "patches/nat55.xorz"
+    },
+    {
+      "name": "everlaster.Naturalis.70.var",
+      "entry": "Custom/Scripts/everlaster/Naturalis/src/Common/MorphListener.cs",
+      "base": "2f04732371f35ce21047679aa8728bb5efdecbe3aa318ceba713b1eee951bc29",
+      "target": "2da30b9e783b321a07ee23c79344c2060f8eb5417efa81d48e1c23a7a3fe18d3",
+      "length": 14768,
+      "patch": "patches/nat70.xorz"
+    },
+    {
+      "name": "everlaster.Naturalis.72.var",
+      "entry": "Custom/Scripts/everlaster/Naturalis/src/Common/MorphListener.cs",
+      "base": "2f04732371f35ce21047679aa8728bb5efdecbe3aa318ceba713b1eee951bc29",
+      "target": "2da30b9e783b321a07ee23c79344c2060f8eb5417efa81d48e1c23a7a3fe18d3",
+      "length": 14768,
+      "patch": "patches/nat72.xorz"
+    },
+    {
+      "name": "everlaster.Naturalis.73.var",
+      "entry": "Custom/Scripts/everlaster/Naturalis/src/Common/MorphListener.cs",
+      "base": "2f04732371f35ce21047679aa8728bb5efdecbe3aa318ceba713b1eee951bc29",
+      "target": "8cdbe5395eddfef7f0d63a9bccf7db1dad3b2a63bdfc3f9aaafb259b17e2807e",
+      "length": 14767,
+      "patch": "patches/nat73.xorz"
+    },
+    {
+      "name": "everlaster.Naturalis.92.var",
+      "entry": "Custom/Scripts/everlaster/Naturalis/Naturalis.cs",
+      "base": "350003886395157eacbba18595dbfe3cb07074b61e06499a4eae59ad6d380eaf",
+      "target": "fe29b878659af8e697272693045696901095ab560dbbb82b56acfad47c84123d",
+      "length": 1778396,
+      "patch": "patches/nat92.xorz"
+    },
+    {
+      "name": "everlaster.Naturalis.93.var",
+      "entry": "Custom/Scripts/everlaster/Naturalis/Naturalis.cs",
+      "base": "c776f3fd68f18f4eddbfb7e6a3b84483a47762b31f82fd38ee710c47a65a0150",
+      "target": "82b2cb5ffea1c0b43eec95d06f7c2243f2d0c26f044a8a168df854b5ebb45146",
+      "length": 1780145,
+      "patch": "patches/nat93.xorz"
+    }
+  ]
+}
