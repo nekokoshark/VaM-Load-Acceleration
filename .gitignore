@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 *.zip
+!package/VaMAcceleration/runtime/python/python312.zip
 *.log
 .build/
 package/VaMAcceleration/backups/
