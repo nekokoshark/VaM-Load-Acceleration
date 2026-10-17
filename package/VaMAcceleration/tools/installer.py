@@ -280,19 +280,44 @@ def patch_packages(paths: list[Path], tx: Transaction, work: Path) -> int:
         print('NATURALIS_PATCHED', p.name)
     return count
 
+def prepare_worker(game: Path, work: Path, plans: list[tuple[Path, Path | bytes]]) -> None:
+    """Stage frozen dependencies and reconstructed targets without changing the game."""
+    work.mkdir()
+    manifest = json_read(APP / 'components.json')
+    dependencies = []
+    for name, digest in manifest['worker'].items():
+        source = APP / name
+        if sha(source) != digest: raise ValueError('WORKER_DEPENDENCY_DAMAGED: ' + name)
+        shutil.copyfile(source, work / source.name)
+        if name.startswith('runtime/worker/'):
+            dependencies.append(source.name + '|' + digest)
+    for name in ('profiles.json',): shutil.copyfile(APP / 'tools' / name, work / name)
+    shutil.copyfile(APP / 'payload/BepInEx/plugins/VaMMemory/VaM.Memory.dll', work / 'VaM.Memory.dll')
+    shutil.copyfile(work / 'VaM.Memory.dll', work / 'MODIFIED_FILE.dll')
+    sources = dict(plans)
+    for name, dest in [('VaM_Data/Managed/Assembly-CSharp.dll', 'Assembly-CSharp.dll'),
+                       ('Mono/EmbedRuntime/mono.dll', 'mono.dll')]:
+        source = sources.get(game / name, game / name)
+        if isinstance(source, bytes): (work / dest).write_bytes(source)
+        else: shutil.copyfile(source, work / dest)
+    settings(work, 'worker-dependencies.txt', dependencies)
+    settings(work, 'portable-settings.txt', [str(game)])
+
+
 def host(game: Path, work: Path, helper: str, methods: list[str]) -> str:
     game_stopped()
-    argv = [str(APP / 'tools/native_port_host.exe'), str(game / 'Mono/EmbedRuntime/mono.dll'),
-        str(game / 'VaM_Data/Managed'), str(game / 'Mono/etc'), 'v2.0.50727', str(work / helper),
-        ';'.join(map(str, [work, game / 'VaM_Data/Managed', game / 'BepInEx/core']))]
+    settings(work, 'worker-helper.txt', [helper])
+    argv = [str(work / 'native_port_host.exe'), str(work / 'mono.dll'),
+        str(game / 'VaM_Data/Managed'), str(game / 'Mono/etc'), 'v2.0.50727', str(work / 'WorkerBootstrap.dll'),
+        ';'.join(map(str, [work, game / 'VaM_Data/Managed']))]
     r = subprocess.run(argv, cwd=work, input=('\n'.join([*methods, 'QUIT']) + '\n').encode(), capture_output=True, timeout=7200)
     output = r.stdout.decode('utf-8', 'replace').replace('\r', '')
     with (work / 'workers.log').open('a', encoding='utf-8') as log:
         log.write(json.dumps(dict(argv=argv, input=methods, exit=r.returncode), ensure_ascii=False) + '\n' + output + r.stderr.decode('utf-8', 'replace'))
     if r.returncode or any(v in output for v in ('TOOL_EXCEPTION:', 'OFFLINE_FAILED', 'ACTION_FAILED')):
-        raise RuntimeError('WORKER_FAILED: ' + output[-3500:])
+        raise RuntimeError('WORKER_FAILED: ' + output[-3500:] + r.stderr.decode('utf-8', 'replace')[-3500:])
     for line in output.splitlines():
-        if line.startswith(('SOURCE_CACHE_PASS', 'OFFLINE_IMPORT_PASS', 'TREE_BUILD_PASS', 'OFFLINE_BUILD_RESULT')): print(line)
+        if line.startswith(('WORKER_DEPENDENCIES_PASS', 'PORTABLE_INIT_PASS', 'SOURCE_CACHE_PASS', 'OFFLINE_IMPORT_PASS', 'TREE_BUILD_PASS', 'OFFLINE_BUILD_RESULT')): print(line)
     return output
 
 def settings(work: Path, name: str, rows: list[str]) -> None:
@@ -300,12 +325,7 @@ def settings(work: Path, name: str, rows: list[str]) -> None:
     (work / name).write_text('\n'.join(rows) + '\n', 'utf-8')
 
 def prebuild(game: Path, cache: Path, paths: list[Path], tx: Transaction, work: Path) -> dict:
-    worker = work / 'worker'; worker.mkdir()
-    for p in (APP / 'tools').glob('*'):
-        if p.is_file(): shutil.copyfile(p, worker / p.name)
-    shutil.copyfile(game / 'BepInEx/plugins/VaMMemory/VaM.Memory.dll', worker / 'VaM.Memory.dll')
-    shutil.copyfile(worker / 'VaM.Memory.dll', worker / 'MODIFIED_FILE.dll')
-    settings(worker, 'portable-settings.txt', [str(game)])
+    worker = work / 'worker'
     native = worker / 'native'; native.mkdir()
     settings(worker, 'source-settings.txt', [str(native), *map(str, paths)])
     output = host(game, worker, 'PortableOffline.dll', ['InitializePortable', 'SourceCaches'])
@@ -419,16 +439,30 @@ def main() -> int:
         if unfinished: raise RuntimeError('INTERRUPTED_TRANSACTION: run Restore_VaM_Acceleration.bat first')
         plans = preflight(game); paths = catalog(game / 'AddonPackages')
         print('TARGET_ROOT', game); print('CACHE_ROOT', cache); print('CATALOG packages=' + str(len(paths)))
-        if args.action == 'check': print('CHECK_PASS planned=' + str(len(plans)) + ' writes=0'); return 0
-        folder = backup_root / (time.strftime('%Y%m%d-%H%M%S') + '-' + str(os.getpid()))
-        tx = Transaction(game, cache, folder)
-        with tempfile.TemporaryDirectory(prefix='stage-', dir=folder) as temp:
+        with tempfile.TemporaryDirectory(prefix='stage-', dir=APP) as temp:
             work = Path(temp)
-            for p, source in plans: tx.put(p, source)
-            for name in SUBDIRS: (cache / 'VaMMemory' / name).mkdir(parents=True, exist_ok=True)
-            packages = patch_packages(paths, tx, work)
-            built = prebuild(game, cache, paths, tx, work)
-            bc7 = convert_bc7(cache, tx, work) if not args.no_bc7 else dict(converted=0, skipped=0, savedBytes=0)
+            try:
+                print('STAGE worker-preflight package=' + json_read(APP / 'components.json')['installerVersion'])
+                prepare_worker(game, work / 'worker', plans)
+                output = host(game, work / 'worker', 'PortableOffline.dll', ['CheckDependencies', 'InitializePortable'])
+                if 'PORTABLE_INIT_PASS' not in output: raise RuntimeError('Worker initialization completion missing')
+                print('WORKER_PREFLIGHT_PASS gameWrites=0')
+                if args.action == 'check': print('CHECK_PASS planned=' + str(len(plans)) + ' writes=0'); return 0
+                folder = backup_root / (time.strftime('%Y%m%d-%H%M%S') + '-' + str(os.getpid()))
+                tx = Transaction(game, cache, folder)
+                print('STAGE install-files')
+                for p, source in plans: tx.put(p, source)
+                for name in SUBDIRS: (cache / 'VaMMemory' / name).mkdir(parents=True, exist_ok=True)
+                packages = patch_packages(paths, tx, work)
+                print('STAGE prebuild-caches')
+                built = prebuild(game, cache, paths, tx, work)
+                bc7 = convert_bc7(cache, tx, work) if not args.no_bc7 else dict(converted=0, skipped=0, savedBytes=0)
+            finally:
+                log = work / 'worker/workers.log'
+                if log.is_file():
+                    logs = APP / 'logs'; logs.mkdir(exist_ok=True)
+                    dest = logs / (time.strftime('%Y%m%d-%H%M%S') + '-' + str(os.getpid()) + '.log')
+                    shutil.copyfile(log, dest); print('WORKER_LOG', dest)
         tx.state.update(status='complete', caches=built, bc7=bc7, naturalisPatched=packages); tx.save()
         print('INSTALL_PASS version=1.8.26 ' + json.dumps(dict(caches=built, bc7=bc7, naturalisPatched=packages), sort_keys=True))
         print('BACKUP', folder)

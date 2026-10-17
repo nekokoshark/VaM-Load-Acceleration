@@ -4,11 +4,13 @@
 
 ## 下载与使用
 
-从 [Releases](https://github.com/nekokoshark/VaM-Load-Acceleration/releases) 下载 `VaM_Load_Acceleration_1.8.26.zip`。GitHub 的自动 Source code ZIP 是源码，不是安装包。
+从 [Releases](https://github.com/nekokoshark/VaM-Load-Acceleration/releases) 下载 `VaM_Load_Acceleration_1.8.26-r1.zip`。GitHub 的自动 Source code ZIP 是源码，不是安装包。
+
+**1.8.26-r1 修复安装器依赖加载**：离线 worker 固定配套 Cecil / Harmony / MonoMod 等 12 个 DLL，在改动游戏文件前完成实际加载预检，解决目标 Managed 中同名 DLL 抢先加载引发的 `DefaultReflectionImporter` 错误。运行时仍为原冻结版本；见[更新记录](CHANGELOG.md)及[安装器设计与日志](docs/INSTALLER.md)。
 
 1. 正常退出 VaM。
 2. 把安装包**里面的文件**解压到 VaM 根目录。`Install_VaM_Acceleration.bat` 与 `VaM.exe` 应当在同一层。
-3. 可先双击 `Check_VaM_Acceleration.bat`：检查兼容性，不写游戏或缓存。
+3. 可先双击 `Check_VaM_Acceleration.bat`：检查兼容性并实际预检 worker，不写游戏或缓存，诊断日志保存在 `VaMAcceleration/logs/`。
 4. 双击 `Install_VaM_Acceleration.bat`，等到 `INSTALL_PASS` 与 `Exit status: 0`。
 5. 使用自己的原启动 BAT 启动 VaM。安装器不启动、关闭或操作游戏，不改 VR 启动链。
 

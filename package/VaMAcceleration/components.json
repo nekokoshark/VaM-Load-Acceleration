@@ -76,5 +76,29 @@
     "BepInEx/plugins/Quest3TriggerUI/Quest3TriggerUI.payload.dll.disabled": "3dd26fac2e59ce5428bd23fa4d8453676a48ebe8ce5c5f7d082d17d3489f2e83",
     "BepInEx/plugins/Quest3TriggerUI/texconv.exe": "61628997fc723a273627f4f8efc63ffae1f45181925571f7e8764d8a45cccf6c",
     "BepInEx/plugins/VaMMemory/VaM.Memory.dll": "213956eed3e3869254622b44473b635a26932b7321f7ceec185cf1e5d9a75bb8"
+  },
+  "installerVersion": "1.8.26-r1",
+  "worker": {
+    "runtime/worker/0Harmony.dll": "5f422df002042e72db8be2fbd55dd768dca0085ccf00f1c45a574d32c25ce3cf",
+    "runtime/worker/0Harmony20.dll": "317bdadc0427e7654c2f7d4a68a8bdd525b4efc1c4b1ce4a76f46be08358c411",
+    "runtime/worker/BepInEx.dll": "3df1208d575a2a7aca799417f496ce135c70da59ed78b597589f0c8191396859",
+    "runtime/worker/BepInEx.Harmony.dll": "39c2b457a7d2ed91c5f892ab7571ccc99dcc2d7ee1094116457f1d2520080371",
+    "runtime/worker/BepInEx.Preloader.dll": "d9d3cd18ae39897ebb3aa3cd9968824ea7d199a06abb9255a46f9e659139717c",
+    "runtime/worker/HarmonyXInterop.dll": "edc7e2c5f0ec9f7d716089219ab717e8c4bc5536ca79c910b4bdd4a3f1570dc1",
+    "runtime/worker/Mono.Cecil.dll": "7ae470288fff4a402899c254d0a76cefef55877f5c54f96e83c797cc5bb6e2f6",
+    "runtime/worker/Mono.Cecil.Mdb.dll": "5896d1898f616701fff18f3b2c71e6b844d2390ef9f41e1c5fccce8cb27c698e",
+    "runtime/worker/Mono.Cecil.Pdb.dll": "174db44a067f58561510af746f3caeb032037762c57a31c8d9ee32db25174984",
+    "runtime/worker/Mono.Cecil.Rocks.dll": "54ac539fb5ddc8b44c0e9acd0fcb7324f89d1a072edf8ebc1b06dd691e3d3927",
+    "runtime/worker/MonoMod.RuntimeDetour.dll": "0e28ad23204722c96311fee10f0975beafa0993593714b7f8e484156e84e1b75",
+    "runtime/worker/MonoMod.Utils.dll": "5cc569dfaf20243a96e2cf2a5e6cfe3e0084e31a84d12a4482a80e7fbc4eddf4",
+    "tools/Bc7Compat.exe": "cd842a9be9fdada6e0f15bdd60c9d3ef69918da611fa2e632fd6db5196026105",
+    "tools/Classifier0.dll": "a355645ecba23f036fa63670b29e90f831b94e5bee7329e4e338243e410a58f4",
+    "tools/Classifier1.dll": "0caef5ad4ea19024549cfb3f7d1e32f80e39b94954e7703f074d3247fde7d7a3",
+    "tools/native_port_host.exe": "f33575fe1acd0af29cf213995cf11cdb7b34f1cac8c255e99d0f366f4b4c83c9",
+    "tools/OfflineSmallBuilder.dll": "109597af32565a5e404e5fda386b0472898aad240c1c21cde0211929a3190932",
+    "tools/PortableOffline.dll": "e6e2b12bab489dc2dfea872e9bf0ec8fb8305fbf209a853de290475ee12156bb",
+    "tools/ProfileCompile.dll": "87eb2b949a7c374d376b75dc8d07ee85c4ca4675ee022f414e571dd10afb1bd9",
+    "tools/texconv.exe": "61628997fc723a273627f4f8efc63ffae1f45181925571f7e8764d8a45cccf6c",
+    "tools/WorkerBootstrap.dll": "65bb9755be648069f804dd6ddb1d9ed4303bbfc8b768ee297d5323379a5466b9"
   }
 }

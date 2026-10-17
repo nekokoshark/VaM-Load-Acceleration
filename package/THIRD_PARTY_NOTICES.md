@@ -20,6 +20,8 @@
 
 `licenses/Mono.txt` 是 Mono 上游各目录许可证索引；差分没有把上游全文源库作为我们的原创发布。游戏内 SharpZipLib／Unity／DynamicCSharp 引用由目标 VaM 提供，未打包。
 
+安装器 1.8.26-r1 的 `runtime/worker` 私有依赖是冻结 `payload/BepInEx/core` 中配套 DLL 的相同字节副本，沿用上表来源及对应许可证，不借用目标 Managed 中的同名工具库。
+
 原项目、上游作者与本工程新增的安装／建表工具分别保留自己的著作权。没有把整个补丁包或第三方改动重新声明为同一个原创许可证。
 
 Python 的原生 OpenSSL、libffi 及 LZ4 库分别保留 `licenses/OpenSSL.txt`、`licenses/Libffi.txt`、`licenses/LZ4-native.txt` 中的上游许可证。

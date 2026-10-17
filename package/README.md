@@ -4,11 +4,13 @@
 
 ## 下载与使用
 
-从 [Releases](https://github.com/nekokoshark/VaM-Load-Acceleration/releases) 下载 `VaM_Load_Acceleration_1.8.26.zip`。GitHub 的自动 Source code ZIP 是源码，不是安装包。
+从 [Releases](https://github.com/nekokoshark/VaM-Load-Acceleration/releases) 下载 `VaM_Load_Acceleration_1.8.26-r1.zip`。GitHub 的自动 Source code ZIP 是源码，不是安装包。
+
+**1.8.26-r1 修复安装器依赖加载**：离线 worker 固定配套 Cecil / Harmony / MonoMod 等 12 个 DLL，在改动游戏文件前完成实际加载预检，解决目标 Managed 中同名 DLL 抢先加载引发的 `DefaultReflectionImporter` 错误。运行时仍为原冻结版本；见[更新记录](CHANGELOG.md)及[安装器设计与日志](docs/INSTALLER.md)。
 
 1. 正常退出 VaM。
 2. 把安装包**里面的文件**解压到 VaM 根目录。`Install_VaM_Acceleration.bat` 与 `VaM.exe` 应当在同一层。
-3. 可先双击 `Check_VaM_Acceleration.bat`：检查兼容性，不写游戏或缓存。
+3. 可先双击 `Check_VaM_Acceleration.bat`：检查兼容性并实际预检 worker，不写游戏或缓存，诊断日志保存在 `VaMAcceleration/logs/`。
 4. 双击 `Install_VaM_Acceleration.bat`，等到 `INSTALL_PASS` 与 `Exit status: 0`。
 5. 使用自己的原启动 BAT 启动 VaM。安装器不启动、关闭或操作游戏，不改 VR 启动链。
 
@@ -26,7 +28,7 @@ Install_VaM_Acceleration.bat --no-bc7
 
 - 目标游戏：**VaM 1.22.0.12**。核心、Mono、Skin DLL 使用 SHA-256 白名单差分重建；仅版本号相同不代表兼容。
 - 需要已有匹配的 **v13beta1 系列 Skin 性能补丁原件**。包内有我们的 Skin 改动差分，而没有第三方完整原件。已有相同最终版本也可直接使用。
-- 支持的原始／中间核心、Mono、Skin 哈希全部列在 [`components.json`](package/VaMAcceleration/components.json)。未知原件在任何安装写入之前退出，输出 `UNSUPPORTED_BASE`。
+- 支持的原始／中间核心、Mono、Skin 哈希全部列在 [`components.json`](VaMAcceleration/components.json)。未知原件在任何安装写入之前退出，输出 `UNSUPPORTED_BASE`。
 - 已有 BepInEx／Doorstop 需要与包内引导依赖兼容；不强行替换不同的引导器。重复的旧 Q3 普通载荷会被拒绝。
 - Quest3TriggerUI 的载荷文件必须保留 `.payload.dll.disabled` 后缀，由配套 HotLoader 加载。不要另放一个普通 `.payload.dll`。
 - 兼容性检查通过不等于实机画面、物理及插件组合已验收。请在自己的常用场景核对。

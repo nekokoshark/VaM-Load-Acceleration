@@ -8,12 +8,16 @@ import zipfile
 def main() -> None:
     ap = argparse.ArgumentParser(); ap.add_argument('--output', type=Path, required=True); args = ap.parse_args()
     root = Path(__file__).resolve().parent.parent / 'package'
-    files = sorted(p for p in root.rglob('*') if p.is_file() and '__pycache__' not in p.parts and 'backups' not in p.relative_to(root).parts and p.suffix != '.pyc')
+    def distributable(p: Path) -> bool:
+        parts = p.relative_to(root).parts
+        return (p.is_file() and not any(x in ('__pycache__', 'backups', 'logs') or x.startswith('stage-') for x in parts)
+                and p.suffix != '.pyc')
+    files = sorted(p for p in root.rglob('*') if distributable(p))
     for p in files:
         if p.name == 'prefs.json' or p.suffix.lower() == '.var': raise ValueError('Private data in distributable tree')
     hashes = {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in files if p.name != 'SHA256SUMS.txt'}
     (root / 'SHA256SUMS.txt').write_text('\n'.join(value + '  ' + key for key, value in hashes.items()) + '\n', 'utf-8')
-    files = sorted(p for p in root.rglob('*') if p.is_file() and '__pycache__' not in p.parts and p.suffix != '.pyc' and 'backups' not in p.relative_to(root).parts)
+    files = sorted(p for p in root.rglob('*') if distributable(p))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(args.output, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for p in files:

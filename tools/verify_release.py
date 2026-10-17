@@ -58,7 +58,8 @@ def main() -> None:
         Path(str(data) + 'meta').write_text(json.dumps(dict(width='256', height='256', format='RGBA32', size=str(data.stat().st_size), date='fixture')), 'utf-8')
     before = {p.relative_to(ROOT).as_posix(): digest(p) for p in ROOT.rglob('*') if p.is_file() and not p.is_relative_to(ROOT / 'VaMAcceleration')}
     (HERE / 'FIXTURE_BASELINE.json').write_text(json.dumps(before, ensure_ascii=False, indent=2), 'utf-8')
-    cli = [str(ROOT / 'VaMAcceleration/runtime/python/python.exe'), str(ROOT / 'VaMAcceleration/tools/installer.py')]
+    runner = SCRIPT_ROOT / 'run_fixture.py'
+    cli = [str(ROOT / 'VaMAcceleration/runtime/python/python.exe'), str(runner), str(ROOT / 'VaMAcceleration/tools/installer.py')]
     run('BASELINE', [*cli, 'check'])
     assert not (cache / 'VaMMemory').exists()
     modified = run('MODIFIED', [*cli, 'install'])
@@ -77,7 +78,7 @@ def main() -> None:
         state = json.loads(p.read_text()); state['game'] = str(rollback); state['cache'] = str(rollback / 'cache 中文 space')
         for row in state['entries']: row['path'] = str(rollback / Path(row['path']).relative_to(ROOT))
         p.write_text(json.dumps(state, ensure_ascii=False, indent=2), 'utf-8')
-    rbcli = [str(rollback / 'VaMAcceleration/runtime/python/python.exe'), str(rollback / 'VaMAcceleration/tools/installer.py')]
+    rbcli = [str(rollback / 'VaMAcceleration/runtime/python/python.exe'), str(runner), str(rollback / 'VaMAcceleration/tools/installer.py')]
     run('ROLLBACK', [*rbcli, 'restore'])
     for name, expected in before.items(): assert digest(rollback / name) == expected, name
     assert not any((rollback / 'cache 中文 space/VaMMemory').rglob('*.mri'))
