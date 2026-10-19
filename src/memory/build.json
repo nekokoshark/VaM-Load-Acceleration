@@ -195,7 +195,7 @@
       "name": "VaM.Memory.SupportIndex"
     },
     {
-      "path": "resources/ORIGINAL_COMPILER_WORKER.exe",
+      "path": "resources/VaM.CompilerWorker.exe",
       "name": "VaM.Memory.CompilerWorker"
     },
     {

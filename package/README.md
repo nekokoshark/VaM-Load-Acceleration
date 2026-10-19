@@ -1,12 +1,14 @@
 # VaM 加载优化补丁
 
-统一打包已部署的 **VaM.Memory 1.8.26 + Quest3TriggerUI 4.6.302** 场景与人物加载加速工作，提供 Windows x64 离线安装器、建表工具、BC7 转换和备份还原。
+基于冻结的 **VaM.Memory 1.8.26 + Quest3TriggerUI 4.6.302**，叠加 r2 桌面适配与编译协议修复，统一打包 场景与人物加载加速工作，提供 Windows x64 离线安装器、建表工具、BC7 转换和备份还原。
 
 ## 下载与使用
 
-从 [Releases](https://github.com/nekokoshark/VaM-Load-Acceleration/releases) 下载 `VaM_Load_Acceleration_1.8.26-r1.zip`。GitHub 的自动 Source code ZIP 是源码，不是安装包。
+从 [Releases](https://github.com/nekokoshark/VaM-Load-Acceleration/releases) 下载 `VaM_Load_Acceleration_1.8.26-r2.zip`。GitHub 的自动 Source code ZIP 是源码，不是安装包。
 
-**1.8.26-r1 修复安装器依赖加载**：离线 worker 固定配套 Cecil / Harmony / MonoMod 等 12 个 DLL，在改动游戏文件前完成实际加载预检，解决目标 Managed 中同名 DLL 抢先加载引发的 `DefaultReflectionImporter` 错误。运行时仍为原冻结版本；见[更新记录](CHANGELOG.md)及[安装器设计与日志](docs/INSTALLER.md)。
+**1.8.26-r2 修复桌面浏览器布局和 BA 编译协议**：预设浏览器及配套面板按桌面相机视口适配，修正左侧裁切及鼠标射线；编译 worker 将二进制回复与普通诊断输出隔离，修复 stdout 污染引起的 `Compiler reply magic`。保留 r1 的安装器依赖隔离，其余冻结组件不变。见[更新记录](CHANGELOG.md)及[验证边界](docs/COMPATIBILITY_REVISION.md)。
+
+本版未处理另报的 `meta.json not found`／预览图空白问题；也没有将本机后续版本整包混入。
 
 1. 正常退出 VaM。
 2. 把安装包**里面的文件**解压到 VaM 根目录。`Install_VaM_Acceleration.bat` 与 `VaM.exe` 应当在同一层。
@@ -28,7 +30,7 @@ Install_VaM_Acceleration.bat --no-bc7
 
 - 目标游戏：**VaM 1.22.0.12**。核心、Mono、Skin DLL 使用 SHA-256 白名单差分重建；仅版本号相同不代表兼容。
 - 需要已有匹配的 **v13beta1 系列 Skin 性能补丁原件**。包内有我们的 Skin 改动差分，而没有第三方完整原件。已有相同最终版本也可直接使用。
-- 支持的原始／中间核心、Mono、Skin 哈希全部列在 [`components.json`](VaMAcceleration/components.json)。未知原件在任何安装写入之前退出，输出 `UNSUPPORTED_BASE`。
+- 支持的原始／中间核心、Mono、Skin 哈希全部列在 [`components.json`](package/VaMAcceleration/components.json)。未知原件在任何安装写入之前退出，输出 `UNSUPPORTED_BASE`。
 - 已有 BepInEx／Doorstop 需要与包内引导依赖兼容；不强行替换不同的引导器。重复的旧 Q3 普通载荷会被拒绝。
 - Quest3TriggerUI 的载荷文件必须保留 `.payload.dll.disabled` 后缀，由配套 HotLoader 加载。不要另放一个普通 `.payload.dll`。
 - 兼容性检查通过不等于实机画面、物理及插件组合已验收。请在自己的常用场景核对。
@@ -50,7 +52,7 @@ Install_VaM_Acceleration.bat --no-bc7
 
 Naturalis 补丁不包含原 VAR 或第三方资源。重建 VAR 时保留其他条目的内容、名称、元信息和顺序；原件先备份。ZIP 的压缩字节可因重建发生变化，不以整个 VAR 字节相等作为未改资源的判据。
 
-**不包含**未部署的 1.8.27 微候选、实验性插件 UI 重写、跳过必需依赖、减少人物／服装／物理或偷偷降画质。BC7 本身是有损编码，不是像素无损转换。
+包内原本已包含重构预设浏览器；r2 是其桌面兼容修复，不是新增实验性 UI 大版本。**不包含**未部署的 1.8.27 微候选、本机后续 UI／性能插件、跳过必需依赖、减少人物／服装／物理或偷偷降画质。BC7 本身是有损编码，不是像素无损转换。
 
 ## 缓存目录和更新
 
@@ -94,7 +96,7 @@ Restore_VaM_Acceleration.bat
 
 ## 测试与收益口径
 
-本次发布包在独立中文／空格路径副本通过：原始基线检查、完整安装与建表、真实 BC7 编码／解码、不透明／透明／normal 区分、Naturalis 精确源码条目修改、独立副本哈希还原、重复安装不改源时间戳、未知核心拒绝、worker 故障的事务回滚。建出的表另外由冻结 DLL 的原入口回放。
+发布包在独立中文／空格路径副本验证：原始基线检查、完整安装与建表、真实 BC7 编码／解码、不透明／透明／normal 区分、Naturalis 精确源码条目修改、独立副本哈希还原、重复安装不改源时间戳、未知核心拒绝、worker 故障的事务回滚。建出的表另外由冻结 DLL 的原入口回放。r2 另通过 108 组布局／1310 项确定性检查、原 Mono 的 31 个方法 JIT，以及真实 BA91 请求的清洁／三类 stdout 噪声／缓存／worker 回收／语法错误测试；未做 Unity 实机桌面截图、鼠标交互或新增 VR 验收。
 
 既往本机 Westo 手估时长存在约 170→115 秒的趋势，但不是每项优化的严格独立贡献。最终内部阶段记录约创建 44.6 秒、延迟恢复 22.3 秒；内部 `LoadPerf` 不等于用户可操作全程。**本发布是已有部署的统一分发，不承诺任意包库稳定再省固定 10/20 秒**。实机组合与更多设备仍需验证。
 
@@ -102,6 +104,7 @@ Restore_VaM_Acceleration.bat
 
 - `package/`：与 Release ZIP 对应的可安装文件。
 - `src/memory/`：冻结 Memory 编译输入与嵌入资源；`build.json` 不使用本机绝对路径。
+- `src/compatibility_20261019/`：r2 的定点 IL 修补器、桌面布局辅助代码与编译 runner；重建命令见[兼容修订说明](docs/COMPATIBILITY_REVISION.md)。
 - `src/offline/`、`src/bc7/`、`src/native/`：便携建表、兼容检查和独立 Mono host 源码。
 - `tools/`：定向回归、构建和打包工具。
 - [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)：第三方组件、来源与随包许可证。

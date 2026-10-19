@@ -1,11 +1,13 @@
 """Host only the compiler executable on the installed game's original Mono."""
 import ctypes
+from ctypes import wintypes
+import msvcrt
 import os
 from pathlib import Path
 import sys
 
 
-def main() -> int:
+def run_mono() -> int:
     root = Path(os.environ["VAM_COMPILER_GAME"])
     executable = Path(sys.argv[1]).resolve()
     managed = root / "VaM_Data/Managed"
@@ -29,6 +31,26 @@ def main() -> int:
     mono.mono_jit_exec.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_char_p)]
     mono.mono_jit_exec.restype = ctypes.c_int
     return mono.mono_jit_exec(domain, assembly, len(argv), native)
+
+
+def main() -> int:
+    # Reserve the parent's binary pipe before loading Mono or its CRT.
+    # All ordinary stdout (Python, managed Console, Win32 and CRT diagnostics)
+    # goes to stderr; only the worker's explicit FileStream uses this handle.
+    reply_fd = os.dup(sys.stdout.fileno())
+    try:
+        reply_handle = msvcrt.get_osfhandle(reply_fd)
+        os.environ["VAM_COMPILER_REPLY_HANDLE"] = str(reply_handle)
+        sys.stdout.flush()
+        os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.SetStdHandle.argtypes = [wintypes.DWORD, wintypes.HANDLE]
+        kernel.SetStdHandle.restype = wintypes.BOOL
+        if not kernel.SetStdHandle(0xFFFFFFF5, msvcrt.get_osfhandle(sys.stderr.fileno())):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return run_mono()
+    finally:
+        os.close(reply_fd)
 
 
 if __name__ == "__main__":
