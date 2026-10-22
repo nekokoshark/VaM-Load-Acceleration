@@ -1,10 +1,12 @@
 # VaM 加载优化补丁
 
-基于冻结的 **VaM.Memory 1.8.26 + Quest3TriggerUI 4.6.302**，叠加 r2 桌面适配与编译协议修复，统一打包 场景与人物加载加速工作，提供 Windows x64 离线安装器、建表工具、BC7 转换和备份还原。
+基于冻结的 **VaM.Memory 1.8.26 + Quest3TriggerUI 4.6.302**，叠加 r2 兼容修订及 r3 桌面浏览器点击修复，统一打包 场景与人物加载加速工作，提供 Windows x64 离线安装器、建表工具、BC7 转换和备份还原。
 
 ## 下载与使用
 
-从 [Releases](https://github.com/nekokoshark/VaM-Load-Acceleration/releases) 下载 `VaM_Load_Acceleration_1.8.26-r2.zip`。GitHub 的自动 Source code ZIP 是源码，不是安装包。
+从 [Releases](https://github.com/nekokoshark/VaM-Load-Acceleration/releases) 下载 `VaM_Load_Acceleration_1.8.26-r3.zip`。GitHub 的自动 Source code ZIP 是源码，不是安装包。
+
+**1.8.26-r3 修复新版预设浏览器点选无反应**：桌面鼠标改读 VaM 独立的 `currentLookMouse`／`cursorMouse`，不再误用手柄注视字段；修复从人物、服装等原生面板打开后卡片和文件夹点不动的问题。新版继续接管，保留调用者原有加载回调。统一浏览器整体视口适配，左栏随窗口尺寸保持可见；保留 r2 的其他桌面修复和 BA 编译协议修复。见[本次验证说明](docs/BROWSER_MOUSE_FIX.md)。
 
 **1.8.26-r2 修复桌面浏览器布局和 BA 编译协议**：预设浏览器及配套面板按桌面相机视口适配，修正左侧裁切及鼠标射线；编译 worker 将二进制回复与普通诊断输出隔离，修复 stdout 污染引起的 `Compiler reply magic`。保留 r1 的安装器依赖隔离，其余冻结组件不变。见[更新记录](CHANGELOG.md)及[验证边界](docs/COMPATIBILITY_REVISION.md)。
 

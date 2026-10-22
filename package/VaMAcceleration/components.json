@@ -73,11 +73,11 @@
     "BepInEx/core/MonoMod.RuntimeDetour.dll": "0e28ad23204722c96311fee10f0975beafa0993593714b7f8e484156e84e1b75",
     "BepInEx/core/MonoMod.Utils.dll": "5cc569dfaf20243a96e2cf2a5e6cfe3e0084e31a84d12a4482a80e7fbc4eddf4",
     "BepInEx/plugins/Quest3TriggerUI/Quest3TriggerUI.HotLoader.dll": "0b116ab9c876998883e82d3e838d2993f29f8cd63e404f00bdb70e06c67e7e99",
-    "BepInEx/plugins/Quest3TriggerUI/Quest3TriggerUI.payload.dll.disabled": "ef80141a4b84a0f05d977c60fb48e6979ee391aa1fccda2110c1a371dc855c14",
+    "BepInEx/plugins/Quest3TriggerUI/Quest3TriggerUI.payload.dll.disabled": "cf6a8572fca70e276d7708a31b9313bc764283ad21c7c387486fad8875a82c39",
     "BepInEx/plugins/Quest3TriggerUI/texconv.exe": "61628997fc723a273627f4f8efc63ffae1f45181925571f7e8764d8a45cccf6c",
     "BepInEx/plugins/VaMMemory/VaM.Memory.dll": "5533222292db19c8cb0b8a5d8cb66de70e5a6ada31559341ae807a4c8e91b47a"
   },
-  "installerVersion": "1.8.26-r2",
+  "installerVersion": "1.8.26-r3",
   "worker": {
     "runtime/worker/0Harmony.dll": "5f422df002042e72db8be2fbd55dd768dca0085ccf00f1c45a574d32c25ce3cf",
     "runtime/worker/0Harmony20.dll": "317bdadc0427e7654c2f7d4a68a8bdd525b4efc1c4b1ce4a76f46be08358c411",
