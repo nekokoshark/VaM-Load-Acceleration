@@ -4,7 +4,9 @@
 
 ## 下载与使用
 
-从 [Releases](https://github.com/nekokoshark/VaM-Load-Acceleration/releases) 下载 `VaM_Load_Acceleration_1.8.26-r3.zip`。GitHub 的自动 Source code ZIP 是源码，不是安装包。
+从 [Releases](https://github.com/nekokoshark/VaM-Load-Acceleration/releases) 下载 `VaM_Load_Acceleration_1.8.26-r4.zip`。GitHub 的自动 Source code ZIP 是源码，不是安装包。
+
+**1.8.26-r4 扩大安装器还原兼容性**：覆盖MorphImports、分类凭据、包树、PackageJSON和BC7五类派生缓存；变化内容先留存在备份，再按原记录还原，兼顾缓存数据/元信息配对、中断重试和空事务收尾。DLL、配置和VAR冲突检查保持。若已遇到 `INTERRUPTED_TRANSACTION` / 缓存 `RESTORE_CONFLICT`，覆盖解压r4并保留backups，先还原成功，再重新安装。见[恢复说明](docs/RESTORE_CACHE_FIX.md)。
 
 **1.8.26-r3 修复新版预设浏览器点选无反应**：桌面鼠标改读 VaM 独立的 `currentLookMouse`／`cursorMouse`，不再误用手柄注视字段；修复从人物、服装等原生面板打开后卡片和文件夹点不动的问题。新版继续接管，保留调用者原有加载回调。统一浏览器整体视口适配，左栏随窗口尺寸保持可见；保留 r2 的其他桌面修复和 BA 编译协议修复。见[本次验证说明](docs/BROWSER_MOUSE_FIX.md)。
 

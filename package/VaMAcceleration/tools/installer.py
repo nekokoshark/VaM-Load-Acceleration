@@ -150,13 +150,32 @@ class Transaction:
         p.parent.mkdir(parents=True, exist_ok=True)
         return p.parent
 
+    @staticmethod
+    def derived_cache(p: Path, cache: Path) -> bool:
+        # Only formats this installer generates/converts, in their recorded cache root.
+        if not p.is_relative_to(cache): return False
+        relative = p.relative_to(cache)
+        patterns = {
+            'MorphImports': r'imp-[0-9A-Fa-f]{64}\.mri',
+            'ClassificationReceipts': r'[0-9A-Fa-f]{64}\.mcr',
+            'PackageTrees': r'[0-9A-Fa-f]{64}\.vjt',
+        }
+        if len(relative.parts) == 3 and relative.parts[0] == 'VaMMemory':
+            pattern = patterns.get(relative.parts[1])
+            return bool(pattern and re.fullmatch(pattern, p.name))
+        if p.parent == cache / 'PackageJSON':
+            return bool(re.fullmatch(r'.+\..+\.\d+\.vamcache(?:json|meta)', p.name))
+        return ('VaMMemory' not in relative.parts
+            and (p.name.endswith('_C.vamcache') or p.name.endswith('_C.vamcachemeta')))
+
     @classmethod
     def restore(cls, folder: Path, game: Path) -> int:
         state = json_read(folder / 'state.json')
         if Path(state['game']) != game: raise ValueError('Backup belongs to a different game root')
         cache = Path(state['cache'])
         count = 0
-        for row in reversed(state['entries']):
+        for index in range(len(state['entries']) - 1, -1, -1):
+            row = state['entries'][index]
             if row['status'] == 'restored': continue
             p = Path(row['path'])
             if not any(p.is_relative_to(root) for root in (game, cache)): raise ValueError('Invalid backup target')
@@ -174,7 +193,34 @@ class Transaction:
                 continue
             if current == row['before'] and (not row['link'] or p.is_symlink()):
                 row['status'] = 'restored'; continue
-            if current != row['after']: raise RuntimeError('RESTORE_CONFLICT: later modification at ' + str(p))
+            if current != row['after']:
+                if (row['link'] or p.is_symlink() or (p.exists() and not p.is_file())
+                    or not cls.derived_cache(p, cache)):
+                    raise RuntimeError('RESTORE_CONFLICT: later modification at ' + str(p))
+                # These derived files change during normal use. Save that version
+                # before restoring the recorded pre-install bytes, including pairs.
+                if current is not None:
+                    game_stopped()
+                    saved = folder / 'preserved-cache' / (str(index) + '-' + current)
+                    saved.parent.mkdir(exist_ok=True)
+                    if not saved.exists():
+                        fd, name = tempfile.mkstemp(prefix='.cache-', dir=saved.parent)
+                        os.close(fd)
+                        try:
+                            shutil.copy2(p, name)
+                            if sha(Path(name)) != current: raise RuntimeError('Cache preservation hash mismatch')
+                            os.replace(name, saved)
+                        finally:
+                            if os.path.exists(name): os.unlink(name)
+                    if sha(saved) != current: raise RuntimeError('Cache preservation hash mismatch')
+                    if sha(p) != current: raise RuntimeError('Cache changed during preservation: ' + str(p))
+                    row['cacheConflictBackup'] = str(saved.relative_to(folder))
+                    row['cacheConflictSHA256'] = current
+                    print('RESTORE_CACHE_SAVED', p, 'backup=' + str(saved))
+                else:
+                    print('RESTORE_CACHE_MISSING', p)
+                row['restoreDisposition'] = 'derived-cache-restore'
+                atomic(folder / 'state.json', (json.dumps(state, ensure_ascii=False, indent=2) + '\n').encode())
             game_stopped()
             if row['before'] is None: p.unlink()
             elif row['link']:
@@ -431,7 +477,7 @@ def main() -> int:
         backup_root = game / 'VaMAcceleration/backups'
         unfinished = [p for p in backup_root.glob('*/state.json') if json_read(p)['status'] == 'installing']
         if args.action == 'restore':
-            pending = [p for p in backup_root.glob('*/state.json') if json_read(p)['status'] != 'restored' and json_read(p)['entries']]
+            pending = [p for p in backup_root.glob('*/state.json') if json_read(p)['status'] != 'restored']
             if not pending: print('RESTORE_PASS files=0'); return 0
             folder = sorted(p.parent for p in pending)[-1]
             count = Transaction.restore(folder, game)
