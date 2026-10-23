@@ -37,6 +37,20 @@ def atomic(p: Path, data: bytes) -> None:
     finally:
         if os.path.exists(name): os.unlink(name)
 
+def preserve_version(p: Path, saved: Path, digest: str) -> None:
+    game_stopped()
+    saved.parent.mkdir(exist_ok=True)
+    if not saved.exists():
+        fd, name = tempfile.mkstemp(prefix='.preserve-', dir=saved.parent)
+        os.close(fd)
+        try:
+            shutil.copy2(p, name)
+            if sha(Path(name)) != digest: raise RuntimeError('Preservation hash mismatch')
+            os.replace(name, saved)
+        finally:
+            if os.path.exists(name): os.unlink(name)
+    if sha(saved) != digest or sha(p) != digest: raise RuntimeError('Preservation hash mismatch')
+
 def game_stopped() -> None:
     # Global check: deliberately stops also when another VaM installation is running.
     r = subprocess.run(['tasklist.exe', '/FO', 'CSV', '/NH'], capture_output=True, check=True)
@@ -120,6 +134,11 @@ class Transaction:
             entry = dict(path=str(p), before=before, after=digest, link=link,
                          atime=stat.st_atime_ns if stat else None, mtime=stat.st_mtime_ns if stat else None,
                          backup=str(backup.relative_to(self.folder)), status='pending')
+            if not link and managed_configuration(p, self.game) is not None:
+                installed = self.folder / 'installed-config' / str(index)
+                atomic(installed, source.read_bytes() if isinstance(source, Path) else source)
+                if sha(installed) != digest: raise RuntimeError('Installed configuration hash mismatch')
+                entry['configInstalledBackup'] = str(installed.relative_to(self.folder))
             self.state['entries'].append(entry)
         self.save()  # Durable write-ahead record for the entire pair.
         for offset, (p, source, before, digest) in enumerate(prepared):
@@ -193,6 +212,12 @@ class Transaction:
                 continue
             if current == row['before'] and (not row['link'] or p.is_symlink()):
                 row['status'] = 'restored'; continue
+            if (current != row['after'] and not row['link'] and not p.is_symlink()
+                and (not p.exists() or p.is_file()) and managed_configuration(p, game) is not None):
+                restore_configuration(state, folder, row, p, index, current)
+                row['status'] = 'restored'; count += 1
+                atomic(folder / 'state.json', (json.dumps(state, ensure_ascii=False, indent=2) + '\n').encode())
+                continue
             if current != row['after']:
                 if (row['link'] or p.is_symlink() or (p.exists() and not p.is_file())
                     or not cls.derived_cache(p, cache)):
@@ -200,20 +225,8 @@ class Transaction:
                 # These derived files change during normal use. Save that version
                 # before restoring the recorded pre-install bytes, including pairs.
                 if current is not None:
-                    game_stopped()
                     saved = folder / 'preserved-cache' / (str(index) + '-' + current)
-                    saved.parent.mkdir(exist_ok=True)
-                    if not saved.exists():
-                        fd, name = tempfile.mkstemp(prefix='.cache-', dir=saved.parent)
-                        os.close(fd)
-                        try:
-                            shutil.copy2(p, name)
-                            if sha(Path(name)) != current: raise RuntimeError('Cache preservation hash mismatch')
-                            os.replace(name, saved)
-                        finally:
-                            if os.path.exists(name): os.unlink(name)
-                    if sha(saved) != current: raise RuntimeError('Cache preservation hash mismatch')
-                    if sha(p) != current: raise RuntimeError('Cache changed during preservation: ' + str(p))
+                    preserve_version(p, saved, current)
                     row['cacheConflictBackup'] = str(saved.relative_to(folder))
                     row['cacheConflictSHA256'] = current
                     print('RESTORE_CACHE_SAVED', p, 'backup=' + str(saved))
@@ -246,7 +259,10 @@ def patched(before: bytes, row: dict) -> bytes:
     return result
 
 def configuration(p: Path, updates: dict[tuple[str, str], str]) -> bytes:
-    text = p.read_text('utf-8-sig') if p.exists() else ''
+    return configured_bytes(p.read_bytes() if p.exists() else b'', updates)
+
+def configured_bytes(data: bytes, updates: dict[tuple[str, str], str]) -> bytes:
+    text = data.decode('utf-8-sig')
     lines = text.splitlines(); section = ''; todo = dict(updates); output = []
     seen: set[tuple[str, str]] = set()
     for line in lines:
@@ -262,6 +278,88 @@ def configuration(p: Path, updates: dict[tuple[str, str], str]) -> bytes:
         output += ['', '[' + section + ']']
         output += [k[1] + ' = ' + value for k, value in todo.items() if k[0] == section]
     return ('\n'.join(output).strip() + '\n').encode('utf-8')
+
+def managed_configuration(p: Path, game: Path) -> dict[tuple[str, str], str] | None:
+    if p == game / 'BepInEx/config/VaM.Memory.cfg':
+        return {('TextureLoading', 'Bc7ToolPath'): str(game / 'BepInEx/plugins/Quest3TriggerUI/texconv.exe'),
+                ('Diagnostics', 'CriticalPathTiming'): 'false'}
+    if p == game / 'doorstop_config.ini':
+        return {('UnityDoorstop', 'enabled'): 'true',
+                ('UnityDoorstop', 'targetAssembly'): r'BepInEx\core\BepInEx.Preloader.dll'}
+    if p == game / 'PerformancePatches/SkinMeshPartDLL.ini': return {}
+    return None
+
+def skin_profile(n: int) -> bytes:
+    profile = '\n'.join(f'{key}={n}' for key in ('computeColliders', 'skinmeshPart', 'applyMorphs'))
+    return ('[threads]\n' + profile + '\nskinmeshPartMaxPerChar=4\napplyMorphMaxPerChar=4\n'
+            '[threadsVR]\n' + profile + '\nskinmeshPartMaxPerChar=4\napplyMorphMaxPerChar=4\n[profiler]\nenabled=0\n').encode()
+
+def config_entries(data: bytes) -> tuple[list[str], dict[tuple[str, str], tuple[int, str]]]:
+    lines = data.decode('utf-8-sig').splitlines(keepends=True)
+    entries: dict[tuple[str, str], tuple[int, str]] = {}
+    section = None
+    for index, line in enumerate(lines):
+        text = line.strip()
+        if not text or text.startswith(('#', ';')): continue
+        match = re.fullmatch(r'\[([^\]]+)\]', text)
+        if match: section = match[1]; continue
+        if section is None or '=' not in text: raise ValueError('Unsupported configuration syntax')
+        key, value = text.split('=', 1); pair = (section, key.strip())
+        if not pair[1] or pair in entries: raise ValueError('Duplicate or empty configuration key')
+        entries[pair] = (index, value.strip())
+    return lines, entries
+
+def restore_configuration(state: dict, folder: Path, row: dict, p: Path, index: int, current: str | None) -> None:
+    if (row.get('restoreDisposition') == 'config-merge' and 'configRestoreSHA256' in row
+        and current == row['configRestoreSHA256']):
+        print('RESTORE_CONFIG_RESUMED', p); return
+    before = b''
+    if row['before'] is not None:
+        backup = folder / row['backup']
+        if sha(backup) != row['before']: raise RuntimeError('Backup hash mismatch')
+        before = backup.read_bytes()
+    if 'configInstalledBackup' in row:
+        installed = (folder / row['configInstalledBackup']).read_bytes()
+    else:
+        # r2-r4 records contain no installed config bytes. Reconstruct only when
+        # the result matches that transaction's exact recorded installation hash.
+        updates = managed_configuration(p, Path(state['game']))
+        if updates:
+            installed = configured_bytes(before, updates)
+        else:
+            installed = next((data for n in range(1, 9) if hashlib.sha256(data := skin_profile(n)).hexdigest() == row['after']), b'')
+    if hashlib.sha256(installed).hexdigest() != row['after']:
+        raise RuntimeError('RESTORE_CONFIG_BASE_UNKNOWN: ' + str(p))
+    original = config_entries(before)[1]
+    applied = config_entries(installed)[1]
+    result = None
+    if current is not None:
+        data = p.read_bytes()
+        if hashlib.sha256(data).hexdigest() != current: raise RuntimeError('Configuration changed during restore')
+        lines, present = config_entries(data)
+        for key in original.keys() | applied.keys():
+            old = original.get(key, (-1, None))[1]
+            new = applied.get(key, (-1, None))[1]
+            if old == new or key not in present: continue
+            line, value = present[key]
+            matches = value == new or (new in ('true', 'false') and value.casefold() == new)
+            if not matches: continue
+            ending = '\r\n' if lines[line].endswith('\r\n') else '\n' if lines[line].endswith('\n') else ''
+            lines[line] = '' if old is None else lines[line].split('=', 1)[0] + '= ' + old + ending
+        result = (b'\xef\xbb\xbf' if data.startswith(b'\xef\xbb\xbf') else b'') + ''.join(lines).encode('utf-8')
+        saved = folder / 'preserved-config' / (str(index) + '-' + current)
+        preserve_version(p, saved, current)
+        row['configConflictBackup'] = str(saved.relative_to(folder))
+        row['configConflictSHA256'] = current
+        print('RESTORE_CONFIG_SAVED', p, 'backup=' + str(saved))
+    row['restoreDisposition'] = 'config-merge'
+    row['configRestoreSHA256'] = hashlib.sha256(result).hexdigest() if result is not None else None
+    atomic(folder / 'state.json', (json.dumps(state, ensure_ascii=False, indent=2) + '\n').encode())
+    game_stopped()
+    if sha(p) != current: raise RuntimeError('Configuration changed during restore')
+    if result is not None and row['configRestoreSHA256'] != current: atomic(p, result)
+    if sha(p) != row['configRestoreSHA256']: raise RuntimeError('Configuration restore hash mismatch')
+    print('RESTORE_CONFIG_MERGED', p)
 
 def preflight(game: Path) -> list[tuple[Path, Path | bytes]]:
     if not (game / 'VaM.exe').is_file(): raise ValueError('VaM.exe missing; extract ZIP into the VaM root')
@@ -285,17 +383,17 @@ def preflight(game: Path) -> list[tuple[Path, Path | bytes]]:
     door = game / 'doorstop_config.ini'
     if door.exists() and not re.search(r'targetAssembly\s*=\s*BepInEx[\\/]core[\\/]BepInEx.Preloader.dll', door.read_text('utf-8-sig'), re.I):
         raise ValueError('DOORSTOP_TARGET_CONFLICT')
-    plans.append((door, configuration(door, {('UnityDoorstop', 'enabled'): 'true',
-        ('UnityDoorstop', 'targetAssembly'): r'BepInEx\core\BepInEx.Preloader.dll'})))
+    updates = managed_configuration(door, game)
+    assert updates is not None
+    plans.append((door, configuration(door, updates)))
     memory = game / 'BepInEx/config/VaM.Memory.cfg'
-    plans.append((memory, configuration(memory, {('TextureLoading', 'Bc7ToolPath'): str(game / 'BepInEx/plugins/Quest3TriggerUI/texconv.exe'),
-        ('Diagnostics', 'CriticalPathTiming'): 'false'})))
+    updates = managed_configuration(memory, game)
+    assert updates is not None
+    plans.append((memory, configuration(memory, updates)))
     ini = game / 'PerformancePatches/SkinMeshPartDLL.ini'
     if not ini.exists():
         n = max(1, min(8, (os.cpu_count() or 2) // 2))
-        profile = '\n'.join(f'{key}={n}' for key in ('computeColliders', 'skinmeshPart', 'applyMorphs'))
-        plans.append((ini, ('[threads]\n' + profile + '\nskinmeshPartMaxPerChar=4\napplyMorphMaxPerChar=4\n'
-                           '[threadsVR]\n' + profile + '\nskinmeshPartMaxPerChar=4\napplyMorphMaxPerChar=4\n[profiler]\nenabled=0\n').encode()))
+        plans.append((ini, skin_profile(n)))
     return plans
 
 def patch_packages(paths: list[Path], tx: Transaction, work: Path) -> int:

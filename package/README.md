@@ -4,7 +4,9 @@
 
 ## 下载与使用
 
-从 [Releases](https://github.com/nekokoshark/VaM-Load-Acceleration/releases) 下载 `VaM_Load_Acceleration_1.8.26-r4.zip`。GitHub 的自动 Source code ZIP 是源码，不是安装包。
+从 [Releases](https://github.com/nekokoshark/VaM-Load-Acceleration/releases) 下载 `VaM_Load_Acceleration_1.8.26-r5.zip`。GitHub 的自动 Source code ZIP 是源码，不是安装包。
+
+**1.8.26-r5 修复配置重写后的还原冲突**：`VaM.Memory.cfg`等已管理配置采用三方按键还原，保留用户后改设置和插件新增默认项；变化配置先留存，旧r2/r3/r4事务按哈希核验后续恢复。遇到配置 `RESTORE_CONFLICT` 时覆盖解压r5并保留backups，先还原成功，再安装。运行载荷不变，见[配置恢复说明](docs/RESTORE_CONFIG_FIX.md)。
 
 **1.8.26-r4 扩大安装器还原兼容性**：覆盖MorphImports、分类凭据、包树、PackageJSON和BC7五类派生缓存；变化内容先留存在备份，再按原记录还原，兼顾缓存数据/元信息配对、中断重试和空事务收尾。DLL、配置和VAR冲突检查保持。若已遇到 `INTERRUPTED_TRANSACTION` / 缓存 `RESTORE_CONFLICT`，覆盖解压r4并保留backups，先还原成功，再重新安装。见[恢复说明](docs/RESTORE_CACHE_FIX.md)。
 

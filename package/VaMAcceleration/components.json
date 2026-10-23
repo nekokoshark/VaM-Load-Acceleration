@@ -77,7 +77,7 @@
     "BepInEx/plugins/Quest3TriggerUI/texconv.exe": "61628997fc723a273627f4f8efc63ffae1f45181925571f7e8764d8a45cccf6c",
     "BepInEx/plugins/VaMMemory/VaM.Memory.dll": "5533222292db19c8cb0b8a5d8cb66de70e5a6ada31559341ae807a4c8e91b47a"
   },
-  "installerVersion": "1.8.26-r4",
+  "installerVersion": "1.8.26-r5",
   "worker": {
     "runtime/worker/0Harmony.dll": "5f422df002042e72db8be2fbd55dd768dca0085ccf00f1c45a574d32c25ce3cf",
     "runtime/worker/0Harmony20.dll": "317bdadc0427e7654c2f7d4a68a8bdd525b4efc1c4b1ce4a76f46be08358c411",
