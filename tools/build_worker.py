@@ -21,14 +21,21 @@ def main() -> None:
                     '/out:' + str(output), '/reference:' + str(args.game / 'VaM_Data/Managed/mscorlib.dll'),
                     '/reference:' + str(args.game / 'VaM_Data/Managed/System.dll'),
                     str(repo / 'src/offline/WorkerBootstrap.cs')], check=True)
-    private = app / 'runtime/worker'
-    private.mkdir(parents=True, exist_ok=True)
-    for source in (app / 'payload/BepInEx/core').glob('*.dll'):
-        shutil.copyfile(source, private / source.name)
-    files = [*private.glob('*.dll'), *[p for p in (app / 'tools').iterdir() if p.suffix in ('.dll', '.exe')]]
     manifest_path = app / 'components.json'
     manifest = json.loads(manifest_path.read_text('utf-8'))
-    manifest['installerVersion'] = '1.8.26-r1'
+    private = app / 'runtime/worker'
+    private.mkdir(parents=True, exist_ok=True)
+    if manifest.get('bootstrapTarget') == 'bepinex-5.4.21':
+        # The offline helpers use the frozen 5.1 ABI, never the game loader ABI.
+        for name, digest in manifest['worker'].items():
+            if name.startswith('runtime/') and hashlib.sha256((app / name).read_bytes()).hexdigest() != digest:
+                raise ValueError('Damaged private offline dependency: ' + name)
+    else:
+        for source in (app / 'payload/BepInEx/core').glob('*.dll'):
+            shutil.copyfile(source, private / source.name)
+    files = [*private.glob('*.dll'), *[p for p in (app / 'tools').iterdir() if p.suffix in ('.dll', '.exe')]]
+    files += list((app / 'runtime/offline').glob('*.dll'))
+    manifest.setdefault('installerVersion', '1.8.26-r1')
     manifest['worker'] = {p.relative_to(app).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(files)}
     manifest_path.write_text(json.dumps(manifest, indent=2) + '\n', 'utf-8')
     print('BUILD_WORKER_PASS pinned=' + str(len(list(private.glob('*.dll')))) + ' helpersFrozen=True runtimeVersion=1.8.26')

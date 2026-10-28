@@ -25,3 +25,5 @@
 原项目、上游作者与本工程新增的安装／建表工具分别保留自己的著作权。没有把整个补丁包或第三方改动重新声明为同一个原创许可证。
 
 Python 的原生 OpenSSL、libffi 及 LZ4 库分别保留 `licenses/OpenSSL.txt`、`licenses/Libffi.txt`、`licenses/LZ4-native.txt` 中的上游许可证。
+
+本次 1.8.26-r6-bep5421 的游戏引导取自官方 BepInEx x64 5.4.21.0；离线 worker 保持原配套 5.1，runtime/offline/VaM.Memory.dll 是仅供独立建表进程使用的 r5 冻结载荷，不加载到 Unity 游戏进程。官方发行地址、SHA-256 及各组件实际指纹见 components.json。

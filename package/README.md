@@ -4,7 +4,9 @@
 
 ## 下载与使用
 
-从 [Releases](https://github.com/nekokoshark/VaM-Load-Acceleration/releases) 下载 `VaM_Load_Acceleration_1.8.26-r5.zip`。GitHub 的自动 Source code ZIP 是源码，不是安装包。
+**1.8.26-r6-bep5421：VaM 1.22.0.13 / BepInEx 5.4.21 适配测试版**。统一游戏引导依赖、修正 Memory 的 Harmony ABI 引用，离线建表保持私有旧依赖。关键链路与完整安装／还原通过，报告人的整场景问题待验收，见[验证结果与安装说明](VaMAcceleration/docs/BEPINEX_5421.md)。
+
+从 [Releases](https://github.com/nekokoshark/VaM-Load-Acceleration/releases) 下载 `VaM_Load_Acceleration_1.8.26-r6-bep5421.zip`。GitHub 的自动 Source code ZIP 是源码，不是安装包。
 
 **1.8.26-r5 修复配置重写后的还原冲突**：`VaM.Memory.cfg`等已管理配置采用三方按键还原，保留用户后改设置和插件新增默认项；变化配置先留存，旧r2/r3/r4事务按哈希核验后续恢复。遇到配置 `RESTORE_CONFLICT` 时覆盖解压r5并保留backups，先还原成功，再安装。运行载荷不变，见[配置恢复说明](docs/RESTORE_CONFIG_FIX.md)。
 
@@ -34,10 +36,10 @@ Install_VaM_Acceleration.bat --no-bc7
 
 ## 兼容范围
 
-- 目标游戏：**VaM 1.22.0.12**。核心、Mono、Skin DLL 使用 SHA-256 白名单差分重建；仅版本号相同不代表兼容。
+- 目标游戏：**VaM 1.22.0.13**。核心、Mono、Skin DLL 使用 SHA-256 白名单差分重建；仅版本号相同不代表兼容。
 - 需要已有匹配的 **v13beta1 系列 Skin 性能补丁原件**。包内有我们的 Skin 改动差分，而没有第三方完整原件。已有相同最终版本也可直接使用。
 - 支持的原始／中间核心、Mono、Skin 哈希全部列在 [`components.json`](package/VaMAcceleration/components.json)。未知原件在任何安装写入之前退出，输出 `UNSUPPORTED_BASE`。
-- 已有 BepInEx／Doorstop 需要与包内引导依赖兼容；不强行替换不同的引导器。重复的旧 Q3 普通载荷会被拒绝。
+- 支持原配套 5.1 或官方 5.4.21 完整引导组合，安装后统一为 5.4.21 并保留事务备份；未知／混装引导拒绝安装。重复的旧 Q3 普通载荷会被拒绝。
 - Quest3TriggerUI 的载荷文件必须保留 `.payload.dll.disabled` 后缀，由配套 HotLoader 加载。不要另放一个普通 `.payload.dll`。
 - 兼容性检查通过不等于实机画面、物理及插件组合已验收。请在自己的常用场景核对。
 

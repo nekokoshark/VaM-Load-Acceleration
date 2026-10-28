@@ -1,7 +1,7 @@
 {
   "version": "1.8.26",
   "quest3": "4.6.302",
-  "game": "1.22.0.12",
+  "game": "1.22.0.13",
   "patches": {
     "VaM_Data/Managed/Assembly-CSharp.dll": [
       {
@@ -59,25 +59,25 @@
     ]
   },
   "payload": {
-    "winhttp.dll": "ef255435c75b1cd108b8a8b2418f7cb5706bc323f487c83dc732b4f91103d0c3",
-    "BepInEx/core/0Harmony.dll": "5f422df002042e72db8be2fbd55dd768dca0085ccf00f1c45a574d32c25ce3cf",
-    "BepInEx/core/0Harmony20.dll": "317bdadc0427e7654c2f7d4a68a8bdd525b4efc1c4b1ce4a76f46be08358c411",
-    "BepInEx/core/BepInEx.dll": "3df1208d575a2a7aca799417f496ce135c70da59ed78b597589f0c8191396859",
-    "BepInEx/core/BepInEx.Harmony.dll": "39c2b457a7d2ed91c5f892ab7571ccc99dcc2d7ee1094116457f1d2520080371",
-    "BepInEx/core/BepInEx.Preloader.dll": "d9d3cd18ae39897ebb3aa3cd9968824ea7d199a06abb9255a46f9e659139717c",
-    "BepInEx/core/HarmonyXInterop.dll": "edc7e2c5f0ec9f7d716089219ab717e8c4bc5536ca79c910b4bdd4a3f1570dc1",
+    "winhttp.dll": "cf9dd372ca0ddbe01153502c49f8f756197bb260001792fe766f6c0242dc7fc0",
+    "BepInEx/core/0Harmony.dll": "1a21cc03424fc82c3dd1346905d16494536b9595ae4162228d99fb7c285c1031",
+    "BepInEx/core/0Harmony20.dll": "4b2fa06106044896e84d0a739a646333d98a34fa2c61c4d1eefc0bf96f964211",
+    "BepInEx/core/BepInEx.dll": "475f794330ff7da4e70f892694498cf516d41eb9b064faa5797e09a1dd546b33",
+    "BepInEx/core/BepInEx.Harmony.dll": "d0739c4a13f369094cb164c205ee4cca5392bdd7241b9f242ee13f0d4c0b1856",
+    "BepInEx/core/BepInEx.Preloader.dll": "9678c74f47353a11afde4ab05887388bcbb69dffc4e28db93af1d1ce0b6ee635",
+    "BepInEx/core/HarmonyXInterop.dll": "21222a7c25a2ddea5e53e9390a693c9b9858fc824b38f9cfe4a5049648c50b6d",
     "BepInEx/core/Mono.Cecil.dll": "7ae470288fff4a402899c254d0a76cefef55877f5c54f96e83c797cc5bb6e2f6",
     "BepInEx/core/Mono.Cecil.Mdb.dll": "5896d1898f616701fff18f3b2c71e6b844d2390ef9f41e1c5fccce8cb27c698e",
     "BepInEx/core/Mono.Cecil.Pdb.dll": "174db44a067f58561510af746f3caeb032037762c57a31c8d9ee32db25174984",
     "BepInEx/core/Mono.Cecil.Rocks.dll": "54ac539fb5ddc8b44c0e9acd0fcb7324f89d1a072edf8ebc1b06dd691e3d3927",
-    "BepInEx/core/MonoMod.RuntimeDetour.dll": "0e28ad23204722c96311fee10f0975beafa0993593714b7f8e484156e84e1b75",
-    "BepInEx/core/MonoMod.Utils.dll": "5cc569dfaf20243a96e2cf2a5e6cfe3e0084e31a84d12a4482a80e7fbc4eddf4",
-    "BepInEx/plugins/Quest3TriggerUI/Quest3TriggerUI.HotLoader.dll": "0b116ab9c876998883e82d3e838d2993f29f8cd63e404f00bdb70e06c67e7e99",
-    "BepInEx/plugins/Quest3TriggerUI/Quest3TriggerUI.payload.dll.disabled": "cf6a8572fca70e276d7708a31b9313bc764283ad21c7c387486fad8875a82c39",
+    "BepInEx/core/MonoMod.RuntimeDetour.dll": "40e49bb314391cd7bddc2644f8553eeba92c194b940836b103df16955c464e0c",
+    "BepInEx/core/MonoMod.Utils.dll": "9d1495f147ac93c4f81f84538c1a326e8f8a6aefc78d6289d798f3ce1162c5e9",
+    "BepInEx/plugins/Quest3TriggerUI/Quest3TriggerUI.HotLoader.dll": "6aa07e84e79000683b49aac61cae79e9f78edea2dacc65d8e459ef359237f99f",
+    "BepInEx/plugins/Quest3TriggerUI/Quest3TriggerUI.payload.dll.disabled": "13d43768889bf6bdfbf50568f0654bf9cb8cb75d78bce119b8fa3b8c14b44a94",
     "BepInEx/plugins/Quest3TriggerUI/texconv.exe": "61628997fc723a273627f4f8efc63ffae1f45181925571f7e8764d8a45cccf6c",
-    "BepInEx/plugins/VaMMemory/VaM.Memory.dll": "5533222292db19c8cb0b8a5d8cb66de70e5a6ada31559341ae807a4c8e91b47a"
+    "BepInEx/plugins/VaMMemory/VaM.Memory.dll": "0e5dec7e29f0d0aa63e118d3cd45138dcce4f57194bf716d1cb7d9020ad3124d"
   },
-  "installerVersion": "1.8.26-r5",
+  "installerVersion": "1.8.26-r6-bep5421",
   "worker": {
     "runtime/worker/0Harmony.dll": "5f422df002042e72db8be2fbd55dd768dca0085ccf00f1c45a574d32c25ce3cf",
     "runtime/worker/0Harmony20.dll": "317bdadc0427e7654c2f7d4a68a8bdd525b4efc1c4b1ce4a76f46be08358c411",
@@ -99,6 +99,44 @@
     "tools/PortableOffline.dll": "e6e2b12bab489dc2dfea872e9bf0ec8fb8305fbf209a853de290475ee12156bb",
     "tools/ProfileCompile.dll": "87eb2b949a7c374d376b75dc8d07ee85c4ca4675ee022f414e571dd10afb1bd9",
     "tools/texconv.exe": "61628997fc723a273627f4f8efc63ffae1f45181925571f7e8764d8a45cccf6c",
-    "tools/WorkerBootstrap.dll": "65bb9755be648069f804dd6ddb1d9ed4303bbfc8b768ee297d5323379a5466b9"
+    "tools/WorkerBootstrap.dll": "65bb9755be648069f804dd6ddb1d9ed4303bbfc8b768ee297d5323379a5466b9",
+    "runtime/offline/VaM.Memory.dll": "5533222292db19c8cb0b8a5d8cb66de70e5a6ada31559341ae807a4c8e91b47a"
+  },
+  "bootstrapProfiles": {
+    "legacy-5.1": {
+      "winhttp.dll": "ef255435c75b1cd108b8a8b2418f7cb5706bc323f487c83dc732b4f91103d0c3",
+      "BepInEx/core/0Harmony.dll": "5f422df002042e72db8be2fbd55dd768dca0085ccf00f1c45a574d32c25ce3cf",
+      "BepInEx/core/0Harmony20.dll": "317bdadc0427e7654c2f7d4a68a8bdd525b4efc1c4b1ce4a76f46be08358c411",
+      "BepInEx/core/BepInEx.dll": "3df1208d575a2a7aca799417f496ce135c70da59ed78b597589f0c8191396859",
+      "BepInEx/core/BepInEx.Harmony.dll": "39c2b457a7d2ed91c5f892ab7571ccc99dcc2d7ee1094116457f1d2520080371",
+      "BepInEx/core/BepInEx.Preloader.dll": "d9d3cd18ae39897ebb3aa3cd9968824ea7d199a06abb9255a46f9e659139717c",
+      "BepInEx/core/HarmonyXInterop.dll": "edc7e2c5f0ec9f7d716089219ab717e8c4bc5536ca79c910b4bdd4a3f1570dc1",
+      "BepInEx/core/Mono.Cecil.dll": "7ae470288fff4a402899c254d0a76cefef55877f5c54f96e83c797cc5bb6e2f6",
+      "BepInEx/core/Mono.Cecil.Mdb.dll": "5896d1898f616701fff18f3b2c71e6b844d2390ef9f41e1c5fccce8cb27c698e",
+      "BepInEx/core/Mono.Cecil.Pdb.dll": "174db44a067f58561510af746f3caeb032037762c57a31c8d9ee32db25174984",
+      "BepInEx/core/Mono.Cecil.Rocks.dll": "54ac539fb5ddc8b44c0e9acd0fcb7324f89d1a072edf8ebc1b06dd691e3d3927",
+      "BepInEx/core/MonoMod.RuntimeDetour.dll": "0e28ad23204722c96311fee10f0975beafa0993593714b7f8e484156e84e1b75",
+      "BepInEx/core/MonoMod.Utils.dll": "5cc569dfaf20243a96e2cf2a5e6cfe3e0084e31a84d12a4482a80e7fbc4eddf4"
+    },
+    "bepinex-5.4.21": {
+      "winhttp.dll": "cf9dd372ca0ddbe01153502c49f8f756197bb260001792fe766f6c0242dc7fc0",
+      "BepInEx/core/0Harmony.dll": "1a21cc03424fc82c3dd1346905d16494536b9595ae4162228d99fb7c285c1031",
+      "BepInEx/core/0Harmony20.dll": "4b2fa06106044896e84d0a739a646333d98a34fa2c61c4d1eefc0bf96f964211",
+      "BepInEx/core/BepInEx.dll": "475f794330ff7da4e70f892694498cf516d41eb9b064faa5797e09a1dd546b33",
+      "BepInEx/core/BepInEx.Harmony.dll": "d0739c4a13f369094cb164c205ee4cca5392bdd7241b9f242ee13f0d4c0b1856",
+      "BepInEx/core/BepInEx.Preloader.dll": "9678c74f47353a11afde4ab05887388bcbb69dffc4e28db93af1d1ce0b6ee635",
+      "BepInEx/core/HarmonyXInterop.dll": "21222a7c25a2ddea5e53e9390a693c9b9858fc824b38f9cfe4a5049648c50b6d",
+      "BepInEx/core/Mono.Cecil.dll": "7ae470288fff4a402899c254d0a76cefef55877f5c54f96e83c797cc5bb6e2f6",
+      "BepInEx/core/Mono.Cecil.Mdb.dll": "5896d1898f616701fff18f3b2c71e6b844d2390ef9f41e1c5fccce8cb27c698e",
+      "BepInEx/core/Mono.Cecil.Pdb.dll": "174db44a067f58561510af746f3caeb032037762c57a31c8d9ee32db25174984",
+      "BepInEx/core/Mono.Cecil.Rocks.dll": "54ac539fb5ddc8b44c0e9acd0fcb7324f89d1a072edf8ebc1b06dd691e3d3927",
+      "BepInEx/core/MonoMod.RuntimeDetour.dll": "40e49bb314391cd7bddc2644f8553eeba92c194b940836b103df16955c464e0c",
+      "BepInEx/core/MonoMod.Utils.dll": "9d1495f147ac93c4f81f84538c1a326e8f8a6aefc78d6289d798f3ce1162c5e9"
+    }
+  },
+  "bootstrapTarget": "bepinex-5.4.21",
+  "upstream": {
+    "url": "https://github.com/BepInEx/BepInEx/releases/download/v5.4.21/BepInEx_x64_5.4.21.0.zip",
+    "sha256": "2af69fe0aaf821e95c4cd3e4d53860e667c54648f97dca6f971a5bcd3c22aa34"
   }
 }

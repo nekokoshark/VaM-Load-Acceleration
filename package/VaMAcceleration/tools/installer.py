@@ -371,12 +371,22 @@ def preflight(game: Path) -> list[tuple[Path, Path | bytes]]:
         row = next((r for r in rows if r['base'] == current), None)
         if row is None: raise ValueError('UNSUPPORTED_BASE: ' + name + ' SHA256=' + str(current))
         plans.append((p, patched(p.read_bytes(), row)))
+    profiles = manifest['bootstrapProfiles']
+    target = profiles[manifest['bootstrapTarget']]
+    # Existing known files must belong to one coherent bootstrap, not a per-file mix.
+    compatible = set(profiles)
+    for name, digest in target.items():
+        if manifest['payload'].get(name) != digest:
+            raise ValueError('BOOTSTRAP_MANIFEST_MISMATCH: ' + name)
+        current = sha(game / name)
+        if current is not None:
+            compatible &= {key for key, files in profiles.items() if files.get(name) == current}
+    if not compatible:
+        raise ValueError('BOOTSTRAP_CONFLICT: unknown or mixed bootstrap files')
     for name, digest in manifest['payload'].items():
         source = APP / 'payload' / name
         if sha(source) != digest: raise ValueError('Damaged payload: ' + name)
         p = game / name
-        if (name.startswith('BepInEx/core/') or name == 'winhttp.dll') and p.exists() and sha(p) != digest:
-            raise ValueError('BOOTSTRAP_CONFLICT: ' + name)
         plans.append((p, source))
     for name in ('Quest3TriggerUI.dll', 'Quest3TriggerUI.payload.dll'):
         if list((game / 'BepInEx/plugins').rglob(name)): raise ValueError('DUPLICATE_Q3_PLUGIN: ' + name)
@@ -436,7 +446,6 @@ def prepare_worker(game: Path, work: Path, plans: list[tuple[Path, Path | bytes]
         if name.startswith('runtime/worker/'):
             dependencies.append(source.name + '|' + digest)
     for name in ('profiles.json',): shutil.copyfile(APP / 'tools' / name, work / name)
-    shutil.copyfile(APP / 'payload/BepInEx/plugins/VaMMemory/VaM.Memory.dll', work / 'VaM.Memory.dll')
     shutil.copyfile(work / 'VaM.Memory.dll', work / 'MODIFIED_FILE.dll')
     sources = dict(plans)
     for name, dest in [('VaM_Data/Managed/Assembly-CSharp.dll', 'Assembly-CSharp.dll'),
