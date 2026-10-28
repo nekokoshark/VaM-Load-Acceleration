@@ -82,7 +82,7 @@ public static class CanonicalPathsRuntime {
         if (!TryProject(path, out result)) { Interlocked.Increment(ref Fallback); return true; }
         Thread.MemoryBarrier();
         foreach (PatchInfo patches in guardStates) {
-            if (patches.prefixes.Length != 0 || patches.postfixes.Length != 0 || patches.transpilers.Length != 0 || patches.finalizers.Length != 0) {
+            if (patches.prefixes.Length != 0 || patches.postfixes.Length != 0 || patches.transpilers.Length != 0 || patches.finalizers.Length != 0 || patches.ilmanipulators.Length != 0) {
                 Interlocked.Increment(ref Fallback); return true;
             }
         }

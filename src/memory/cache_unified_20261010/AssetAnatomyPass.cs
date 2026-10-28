@@ -50,7 +50,7 @@ namespace VaM.Memory {
   public static void SetFixtureMethods(MethodInfo[] methods){fixtureMethods=methods??new MethodInfo[0];checkedEpoch=-1;}
   private static bool Allowed(MethodBase method) {
    var info=Harmony.GetPatchInfo(method);if(info==null)return true;
-   foreach(var patches in new[]{info.Prefixes,info.Postfixes,info.Transpilers,info.Finalizers})foreach(var patch in patches) {
+   foreach(var patches in new[]{info.Prefixes,info.Postfixes,info.Transpilers,info.Finalizers,info.ILManipulators})foreach(var patch in patches) {
     if(patch.PatchMethod==AccessTools.Method(typeof(AssetAnatomyPass),"Begin") ||
        patch.PatchMethod==AccessTools.Method(typeof(AssetAnatomyPass),"Rewrite") ||
        patch.PatchMethod==AccessTools.Method(typeof(AssetAnatomyPass),"End") ||

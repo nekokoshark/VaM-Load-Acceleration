@@ -82,23 +82,44 @@ namespace VaM.Memory {
   private static void PatchChanging(){Interlocked.Increment(ref importPatchBusy);Interlocked.Increment(ref importPatchEpoch);}
   private static void PatchChanged(){Interlocked.Increment(ref importPatchEpoch);Interlocked.Decrement(ref importPatchBusy);}
   private static void InstallImportPatchObserver() {
-   if(importObserverInstalled)return;
-   // The bundled Harmony's Add/Remove entry points converge on these three mutators.
-   // Only patch mutations pay the observer cost; the import loop reads a generation.
-   Type type=typeof(Harmony).Assembly.GetType("HarmonyLib.PatchInfo",true);var methods=new List<MethodInfo>();
-   foreach(var method in type.GetMethods(BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.DeclaredOnly))
-    if((method.Name=="AddPatch" && method.GetParameters().Length==6) || method.Name=="RemovePatch")methods.Add(method);
-   if(methods.Count!=3)throw new InvalidOperationException("Harmony mutation schema changed");
-   var harmony=new Harmony(Id+".import-hook-epoch");
-   foreach(var method in methods)harmony.Patch(method,prefix:new HarmonyMethod(typeof(MorphSnapshotState),"PatchChanging"),finalizer:new HarmonyMethod(typeof(MorphSnapshotState),"PatchChanged"));
-   importObserverInstalled=true;
+   lock(Gate) {
+    if(importObserverInstalled)return;
+    // HarmonyX 2.9 publishes five patch arrays through these exact mutators.
+    // Obsolete singular Add wrappers delegate here and must not be observed twice.
+    Type type=typeof(Harmony).Assembly.GetType("HarmonyLib.PatchInfo",true);
+    var methods=new List<MethodInfo>();
+    var flags=BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.DeclaredOnly;
+    string[] adds={"AddPrefixes","AddPostfixes","AddTranspilers","AddFinalizers","AddILManipulators"};
+    string[] removes={"RemovePrefix","RemovePostfix","RemoveTranspiler","RemoveFinalizer","RemoveILManipulator"};
+    foreach(string name in adds) {
+     var method=type.GetMethod(name,flags,null,new[]{typeof(string),typeof(HarmonyMethod[])},null);
+     if(method==null || method.ReturnType!=typeof(void))throw new MissingMethodException(type.FullName,name);
+     methods.Add(method);
+    }
+    foreach(string name in removes) {
+     var method=type.GetMethod(name,flags,null,new[]{typeof(string)},null);
+     if(method==null || method.ReturnType!=typeof(void))throw new MissingMethodException(type.FullName,name);
+     methods.Add(method);
+    }
+    var remove=type.GetMethod("RemovePatch",flags,null,new[]{typeof(MethodInfo)},null);
+    if(remove==null || remove.ReturnType!=typeof(void))throw new MissingMethodException(type.FullName,"RemovePatch(MethodInfo)");
+    methods.Add(remove);
+    var harmony=new Harmony(Id+".import-hook-epoch");
+    try {
+     foreach(var method in methods)harmony.Patch(method,prefix:new HarmonyMethod(typeof(MorphSnapshotState),"PatchChanging"),finalizer:new HarmonyMethod(typeof(MorphSnapshotState),"PatchChanged"));
+     importObserverInstalled=true;
+    } catch {
+     harmony.UnpatchSelf();
+     throw;
+    }
+   }
   }
   public static string ImportReceiptStats() {
    return "enabled="+(importRoot!=null)+" hits="+importHits+" misses="+importMisses+" writes="+importWrites+" rejected="+importRejected+" ambiguousPaths="+importAmbiguous+" runtimeRoots="+(active==null?0:1)+" blocked="+(importBlockedMethod??"none");
   }
   private static bool AllowedPatches(MethodBase method,params MethodInfo[] allowed) {
    var info=Harmony.GetPatchInfo(method);if(info==null)return true;
-   foreach(var patches in new[]{info.Prefixes,info.Postfixes,info.Transpilers,info.Finalizers})foreach(var patch in patches) {
+   foreach(var patches in new[]{info.Prefixes,info.Postfixes,info.Transpilers,info.Finalizers,info.ILManipulators})foreach(var patch in patches) {
     bool found=false;foreach(var valid in allowed)if(valid!=null && patch.PatchMethod==valid){found=true;break;}
     if(!found){importBlockedMethod=method.DeclaringType.FullName+"."+method.Name;return false;}
    }

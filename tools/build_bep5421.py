@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import zipfile
 
@@ -19,6 +20,7 @@ def main() -> None:
     parser.add_argument('--baseline-app', type=Path, required=True)
     parser.add_argument('--upstream-zip', type=Path, required=True)
     parser.add_argument('--output-app', type=Path, required=True)
+    parser.add_argument('--game', type=Path, required=True, help='VaM managed references for the reviewed r8 donor')
     args = parser.parse_args()
     old, archive, output = (p.resolve() for p in (args.baseline_app, args.upstream_zip, args.output_app))
     if output.exists():
@@ -58,10 +60,16 @@ def main() -> None:
             if '/plugins/' in name and name.endswith(('.dll', '.dll.disabled')):
                 destination = output / 'payload' / name
                 subprocess.run([str(tool), str(old / 'payload' / name), str(destination), str(core)], check=True)
+                if name == 'BepInEx/plugins/VaMMemory/VaM.Memory.dll':
+                    r7 = work / 'r7-memory.dll'
+                    shutil.copyfile(destination, r7)
+                    subprocess.run([sys.executable, str(Path(__file__).with_name('build_mutation.py')),
+                                    '--game', str(args.game.resolve()), '--core', str(core),
+                                    '--input', str(r7), '--output', str(destination)], check=True)
                 manifest['payload'][name] = sha(destination)
     current = Path(__file__).resolve().parents[1] / 'package/VaMAcceleration'
     shutil.copyfile(current / 'tools/installer.py', output / 'tools/installer.py')
-    manifest.update(installerVersion='1.8.26-r7-bep5421', game='1.22.0.13',
+    manifest.update(installerVersion='1.8.26-r8-bep5421', game='1.22.0.13',
                     bootstrapTarget='bepinex-5.4.21', bootstrapProfiles={
                         'legacy-5.1': legacy,
                         'bepinex-5.4.21': {n: manifest['payload'][n] for n in legacy}},

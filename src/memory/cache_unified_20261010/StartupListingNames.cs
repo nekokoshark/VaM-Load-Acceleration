@@ -34,7 +34,7 @@ public static class ListingNamesRuntime {
         if (method == null) throw new MissingMethodException("Listing projection dependency differs");
         var info = Harmony.GetPatchInfo(method);
         if (info == null) return false;
-        foreach (var patches in new[] {info.Prefixes,info.Postfixes,info.Transpilers,info.Finalizers}) foreach(var patch in patches) {
+        foreach (var patches in new[] {info.Prefixes,info.Postfixes,info.Transpilers,info.Finalizers,info.ILManipulators}) foreach(var patch in patches) {
             if(patch.owner==Id) continue;
             // The exact constructor-only snapshot rewrite has no name effects.
             // Keep name-only projection active when both loading modules coexist;

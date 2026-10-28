@@ -64,7 +64,7 @@ namespace VaM.Memory {
                     patch.PatchMethod!=AccessTools.Method(typeof(ZipEntryLookup),"Before"))return false;
             foreach(var patch in patches.Postfixes)
                 if(patch.PatchMethod!=AccessTools.Method(typeof(MorphClassificationMemo),"Read") && !ClassificationStreamCompatibility.Allows(method,patch))return false;
-            if(patches.Transpilers.Count!=0)return false;
+            if(patches.Transpilers.Count!=0 || patches.ILManipulators.Count!=0)return false;
             foreach(var patch in patches.Finalizers)
                 if(patch.PatchMethod!=AccessTools.Method(typeof(MorphClassificationMemo),"After"))return false;
             return true;

@@ -75,9 +75,9 @@
     "BepInEx/plugins/Quest3TriggerUI/Quest3TriggerUI.HotLoader.dll": "6aa07e84e79000683b49aac61cae79e9f78edea2dacc65d8e459ef359237f99f",
     "BepInEx/plugins/Quest3TriggerUI/Quest3TriggerUI.payload.dll.disabled": "13d43768889bf6bdfbf50568f0654bf9cb8cb75d78bce119b8fa3b8c14b44a94",
     "BepInEx/plugins/Quest3TriggerUI/texconv.exe": "61628997fc723a273627f4f8efc63ffae1f45181925571f7e8764d8a45cccf6c",
-    "BepInEx/plugins/VaMMemory/VaM.Memory.dll": "bdcac9d0be3ab6e5a2eaf0991c9e4f6668b58930cdfb9781a4cbf3e85e759de0"
+    "BepInEx/plugins/VaMMemory/VaM.Memory.dll": "93db8389928b92b080502a34b23d4e3ec0c95319cc2374a20dd9091c3426cdc3"
   },
-  "installerVersion": "1.8.26-r7-bep5421",
+  "installerVersion": "1.8.26-r8-bep5421",
   "worker": {
     "runtime/worker/0Harmony.dll": "5f422df002042e72db8be2fbd55dd768dca0085ccf00f1c45a574d32c25ce3cf",
     "runtime/worker/0Harmony20.dll": "317bdadc0427e7654c2f7d4a68a8bdd525b4efc1c4b1ce4a76f46be08358c411",

@@ -48,7 +48,7 @@ namespace VaM.Memory {
             foreach(MethodBase member in Members(type)) {
                 var patches=Harmony.GetPatchInfo(member);
                 if(patches!=null && (patches.Prefixes.Count!=0 || patches.Postfixes.Count!=0 ||
-                    patches.Transpilers.Count!=0 || patches.Finalizers.Count!=0))return false;
+                    patches.Transpilers.Count!=0 || patches.Finalizers.Count!=0 || patches.ILManipulators.Count!=0))return false;
             }
             foreach(Type nested in type.GetNestedTypes(BindingFlags.Public|BindingFlags.NonPublic))
                 if(!Unpatched(nested))return false;

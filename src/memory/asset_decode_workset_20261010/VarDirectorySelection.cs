@@ -81,7 +81,7 @@ namespace VaM.Memory {
    bool okay=true;
    foreach(var method in sensitive) {
     var info=Harmony.GetPatchInfo(method);if(info==null)continue;
-    foreach(var patches in new[]{info.Prefixes,info.Postfixes,info.Transpilers,info.Finalizers})foreach(var patch in patches)
+    foreach(var patches in new[]{info.Prefixes,info.Postfixes,info.Transpilers,info.Finalizers,info.ILManipulators})foreach(var patch in patches)
      if(!((method==Target && patch.PatchMethod==RewriteMethod) ||
        ((method==PathSetter || method==NameSetter) &&
         (patch.PatchMethod==ChangeMethod || patch.PatchMethod==ChangeDoneMethod))))okay=false;

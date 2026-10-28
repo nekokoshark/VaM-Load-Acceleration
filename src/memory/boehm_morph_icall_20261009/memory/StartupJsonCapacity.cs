@@ -42,7 +42,7 @@ public static class JsonCapacityRuntime {
         Thread.MemoryBarrier();
         for (int i = 0; i < guards.Length; i++) {
             PatchInfo info = guards[i];
-            if (info.prefixes.Length != 0 || info.postfixes.Length != 0 || info.transpilers.Length != 0 || info.finalizers.Length != 0)
+            if (info.prefixes.Length != 0 || info.postfixes.Length != 0 || info.transpilers.Length != 0 || info.finalizers.Length != 0 || info.ilmanipulators.Length != 0)
                 return new Dictionary<string, JSONNode>();
         }
         return new Dictionary<string, JSONNode>(3);

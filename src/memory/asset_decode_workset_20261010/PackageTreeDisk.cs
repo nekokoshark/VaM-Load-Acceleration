@@ -54,7 +54,7 @@ namespace VaM.Memory {
    bool result=true;
    foreach(var method in dependencies) {
     var info=Harmony.GetPatchInfo(method);if(info==null)continue;
-    foreach(var patches in new[]{info.Prefixes,info.Postfixes,info.Transpilers,info.Finalizers})foreach(var patch in patches)
+    foreach(var patches in new[]{info.Prefixes,info.Postfixes,info.Transpilers,info.Finalizers,info.ILManipulators})foreach(var patch in patches)
      if(!(method==JsonCapacityRuntime.Target && patch.PatchMethod==AccessTools.Method(typeof(JsonCapacityRuntime),"Rewrite")))result=false;
    }
    if(now!=MorphSnapshotState.HookEpoch || MorphSnapshotState.HooksChanging)return false;

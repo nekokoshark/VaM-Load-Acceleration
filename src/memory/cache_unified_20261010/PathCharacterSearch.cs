@@ -20,7 +20,7 @@ namespace VaM.Memory {
    if(epoch==checkedEpoch)return compatible;
    var info=Harmony.GetPatchInfo(Target);
    bool result=info!=null && info.Prefixes.Count==1 && info.Prefixes[0].PatchMethod==Prefix &&
-       info.Postfixes.Count==0 && info.Transpilers.Count==0 && info.Finalizers.Count==0;
+       info.Postfixes.Count==0 && info.Transpilers.Count==0 && info.Finalizers.Count==0 && info.ILManipulators.Count==0;
    if(epoch!=MorphSnapshotState.HookEpoch || MorphSnapshotState.HooksChanging)return false;
    checkedEpoch=epoch;compatible=result;return result;
   }

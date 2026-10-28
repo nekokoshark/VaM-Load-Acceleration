@@ -101,7 +101,7 @@ namespace StartupMorphIndex {
             foreach (var method in methods) {
                 Method(writer, method);
                 var patches = Harmony.GetPatchInfo(method);
-                foreach (var group in new[] { patches.Prefixes, patches.Postfixes, patches.Transpilers, patches.Finalizers })
+                foreach (var group in new[] { patches.Prefixes, patches.Postfixes, patches.Transpilers, patches.Finalizers, patches.ILManipulators })
                     foreach (var patch in group) { ScalarCache.String(writer, patch.owner); writer.Write(patch.priority); Method(writer, patch.PatchMethod); }
             }
         }
