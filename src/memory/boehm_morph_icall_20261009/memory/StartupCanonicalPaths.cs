@@ -26,7 +26,7 @@ public static class CanonicalPathsRuntime {
     // Keep the live objects, NOT a cached verdict or a snapshot of the arrays.
     private static PatchInfo[] guardStates;
     private static readonly Func<MethodBase, PatchInfo> RegistryInfo = (Func<MethodBase, PatchInfo>)Delegate.CreateDelegate(
-        typeof(Func<MethodBase, PatchInfo>), typeof(Harmony).Assembly.GetType("HarmonyLib.Internal.GlobalPatchState", true)
+        typeof(Func<MethodBase, PatchInfo>), typeof(Harmony).Assembly.GetType("HarmonyLib.Public.Patching.PatchManager", true)
             .GetMethod("ToPatchInfo", StaticAll));
     public static bool GuardIdentitiesCurrent() {
         for (int i = 0; i < Omitted.Length; i++)

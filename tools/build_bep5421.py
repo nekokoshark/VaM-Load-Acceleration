@@ -61,7 +61,7 @@ def main() -> None:
                 manifest['payload'][name] = sha(destination)
     current = Path(__file__).resolve().parents[1] / 'package/VaMAcceleration'
     shutil.copyfile(current / 'tools/installer.py', output / 'tools/installer.py')
-    manifest.update(installerVersion='1.8.26-r6-bep5421', game='1.22.0.13',
+    manifest.update(installerVersion='1.8.26-r7-bep5421', game='1.22.0.13',
                     bootstrapTarget='bepinex-5.4.21', bootstrapProfiles={
                         'legacy-5.1': legacy,
                         'bepinex-5.4.21': {n: manifest['payload'][n] for n in legacy}},

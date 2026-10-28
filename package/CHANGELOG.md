@@ -1,5 +1,24 @@
 # 更新记录
 
+## 1.8.26-r7-bep5421：修复 Harmony 注册表绑定（2026-10-28）
+
+修复 r6 在官方 BepInEx 5.4.21 / HarmonyX 2.9 下，`CanonicalPathsRuntime` 与 `JsonCapacityRuntime` 查找不存在的 `HarmonyLib.Internal.GlobalPatchState` 导致初始化失败的问题。绑定改为此版本真实使用的 `HarmonyLib.Public.Patching.PatchManager.ToPatchInfo`，保留后装补丁的回退检查，无新增逐帧扫描。
+
+**升级：退出 VaM → 覆盖解压本包（保留 `VaMAcceleration/backups`）→ 重新运行 `Install_VaM_Acceleration.bat --no-bc7` → 看到 `INSTALL_PASS`、退出码 0 后启动。** 仅解压不会替换已安装的插件 DLL。也可直接双击安装 BAT 完整执行。
+
+两处原始类型加载错误已在原 Mono 复现；新版初始化、20 轮外来补丁挂接/撤销、原生路径与 JSON 回退、7 模块和缩略图像素、完整安装/独立还原通过。此前 r6 的 7 模块测试漏测了这两条初始化路径，本版补上该回归。
+
+本版仅确认修复上述启动错误；反馈中的整场景灰白人物/预览空白尚需对方升级复测，没有将离线像素测试表述为实景画面验收。保留测试版标记；未关闭功能掩盖错误，未替换皮肤、预设或第三方资源。
+
+
+## 1.8.26-r6-bep5421 — BepInEx 5.4.21 适配测试版（2026-10-28）
+
+- 更正目标标注为用户确认的 VaM 1.22.0.13，核心差分哈希白名单保持。
+- 游戏运行期采用官方完整 5.4.21 引导，Memory 修正 175 处 Patch 返回签名和 4 处 Constructor 参数；UI／HotLoader 引用同步。
+- 避免这些载荷被自动转换到 0Harmony20；不禁用其他插件的兼容桥。
+- 安装器支持两代已知引导的事务升级与还原，离线工具和旧 ABI 的 Memory 继续私有隔离。
+- 定向引用／原 Mono patch／缩略图像素／UI 包装器及整包恢复验证通过；旧版经官方 shim 亦通过定向测试，报告人整场景异常尚待复验，故以测试版发布。详见 [适配说明](docs/BEPINEX_5421.md)。
+
 ## 1.8.26-r5 — 配置重写后的还原冲突（2026-10-23）
 
 - 修复VaM.Memory.cfg被BepInEx自动重写或用户修改后，整文件哈希冲突阻塞还原的问题。

@@ -22,6 +22,9 @@ class Retarget5421 {
      if(!method.HasBody) continue;
      var code=method.Body.Instructions;
      foreach(var i in code.ToArray()) {
+      // Official HarmonyX 2.9 retains live PatchInfo objects under PatchManager.
+      if(i.OpCode==OpCodes.Ldstr && (string)i.Operand=="HarmonyLib.Internal.GlobalPatchState")
+       i.Operand="HarmonyLib.Public.Patching.PatchManager";
       var call=i.Operand as MethodReference;
       if(call==null || call.DeclaringType.Scope.Name!="0Harmony") continue;
       if(call.DeclaringType.FullName=="HarmonyLib.Harmony" && call.Name=="Patch" && call.Parameters.Count==5 && call.ReturnType.FullName=="System.Reflection.Emit.DynamicMethod") {

@@ -1,12 +1,23 @@
 # VaM 加载优化补丁
 
+## 1.8.26-r7-bep5421：修复 Harmony 注册表绑定（2026-10-28）
+
+修复 r6 在官方 BepInEx 5.4.21 / HarmonyX 2.9 下，`CanonicalPathsRuntime` 与 `JsonCapacityRuntime` 查找不存在的 `HarmonyLib.Internal.GlobalPatchState` 导致初始化失败的问题。绑定改为此版本真实使用的 `HarmonyLib.Public.Patching.PatchManager.ToPatchInfo`，保留后装补丁的回退检查，无新增逐帧扫描。
+
+**升级：退出 VaM → 覆盖解压本包（保留 `VaMAcceleration/backups`）→ 重新运行 `Install_VaM_Acceleration.bat --no-bc7` → 看到 `INSTALL_PASS`、退出码 0 后启动。** 仅解压不会替换已安装的插件 DLL。也可直接双击安装 BAT 完整执行。
+
+两处原始类型加载错误已在原 Mono 复现；新版初始化、20 轮外来补丁挂接/撤销、原生路径与 JSON 回退、7 模块和缩略图像素、完整安装/独立还原通过。此前 r6 的 7 模块测试漏测了这两条初始化路径，本版补上该回归。
+
+本版仅确认修复上述启动错误；反馈中的整场景灰白人物/预览空白尚需对方升级复测，没有将离线像素测试表述为实景画面验收。保留测试版标记；未关闭功能掩盖错误，未替换皮肤、预设或第三方资源。
+
+
 基于冻结的 **VaM.Memory 1.8.26 + Quest3TriggerUI 4.6.302**，叠加 r2 兼容修订及 r3 桌面浏览器点击修复，统一打包 场景与人物加载加速工作，提供 Windows x64 离线安装器、建表工具、BC7 转换和备份还原。
 
 ## 下载与使用
 
 **1.8.26-r6-bep5421：VaM 1.22.0.13 / BepInEx 5.4.21 适配测试版**。统一游戏引导依赖、修正 Memory 的 Harmony ABI 引用，离线建表保持私有旧依赖。关键链路与完整安装／还原通过，报告人的整场景问题待验收，见[验证结果与安装说明](VaMAcceleration/docs/BEPINEX_5421.md)。
 
-从 [Releases](https://github.com/nekokoshark/VaM-Load-Acceleration/releases) 下载 `VaM_Load_Acceleration_1.8.26-r6-bep5421.zip`。GitHub 的自动 Source code ZIP 是源码，不是安装包。
+从 [Releases](https://github.com/nekokoshark/VaM-Load-Acceleration/releases) 下载 `VaM_Load_Acceleration_1.8.26-r7-bep5421.zip`。GitHub 的自动 Source code ZIP 是源码，不是安装包。
 
 **1.8.26-r5 修复配置重写后的还原冲突**：`VaM.Memory.cfg`等已管理配置采用三方按键还原，保留用户后改设置和插件新增默认项；变化配置先留存，旧r2/r3/r4事务按哈希核验后续恢复。遇到配置 `RESTORE_CONFLICT` 时覆盖解压r5并保留backups，先还原成功，再安装。运行载荷不变，见[配置恢复说明](docs/RESTORE_CONFIG_FIX.md)。
 

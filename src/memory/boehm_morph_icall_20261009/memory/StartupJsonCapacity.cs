@@ -19,7 +19,7 @@ public static class JsonCapacityRuntime {
         DefaultConstructor, SizedConstructor, DictionaryType.GetMethod("Init", All), DictionaryType.GetMethod("InitArrays", All)
     };
     private static readonly Func<MethodBase, PatchInfo> RegistryInfo = (Func<MethodBase, PatchInfo>)Delegate.CreateDelegate(
-        typeof(Func<MethodBase, PatchInfo>), typeof(Harmony).Assembly.GetType("HarmonyLib.Internal.GlobalPatchState", true)
+        typeof(Func<MethodBase, PatchInfo>), typeof(Harmony).Assembly.GetType("HarmonyLib.Public.Patching.PatchManager", true)
             .GetMethod("ToPatchInfo", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public));
     private static PatchInfo[] guards;
 
